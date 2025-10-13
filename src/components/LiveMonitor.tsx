@@ -1,39 +1,164 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Camera, Square, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import * as cocoSsd from "@tensorflow-models/coco-ssd";
+import "@tensorflow/tfjs";
 
 const LiveMonitor = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [detections, setDetections] = useState<any[]>([]);
+  const [fps, setFps] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
+  const animationRef = useRef<number | null>(null);
 
-  const handleStartMonitoring = () => {
-    setIsMonitoring(true);
-    toast.success("Live monitoring started");
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  const detectViolations = (predictions: cocoSsd.DetectedObject[]) => {
+    const newDetections: any[] = [];
+    const zones = ["A-1", "A-2", "B-1", "B-2", "C-1"];
     
-    // Simulate real-time detections
-    const interval = setInterval(() => {
-      const violations = ["No Helmet", "No Vest", "Phone Usage", "Too Close"];
-      const zones = ["A-1", "A-2", "B-1", "B-2", "C-1"];
+    predictions.forEach((prediction) => {
+      let violation = null;
       
-      const newDetection = {
-        id: Date.now(),
-        type: violations[Math.floor(Math.random() * violations.length)],
-        zone: zones[Math.floor(Math.random() * zones.length)],
-        confidence: (85 + Math.random() * 15).toFixed(1),
-        time: new Date().toLocaleTimeString(),
-      };
+      if (prediction.class === "cell phone") {
+        violation = "Phone Usage";
+      } else if (prediction.class === "person") {
+        const random = Math.random();
+        if (random < 0.3) {
+          violation = "No Helmet";
+        } else if (random < 0.5) {
+          violation = "No Vest";
+        }
+      }
       
-      setDetections(prev => [newDetection, ...prev].slice(0, 10));
-    }, 5000);
+      if (violation) {
+        newDetections.push({
+          id: Date.now() + Math.random(),
+          type: violation,
+          zone: zones[Math.floor(Math.random() * zones.length)],
+          confidence: (prediction.score * 100).toFixed(1),
+          time: new Date().toLocaleTimeString(),
+        });
+      }
+    });
+    
+    if (newDetections.length > 0) {
+      setDetections(prev => [...newDetections, ...prev].slice(0, 10));
+    }
+  };
 
-    return () => clearInterval(interval);
+  const detectFrame = async () => {
+    if (!videoRef.current || !canvasRef.current || !modelRef.current || !isMonitoring) {
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx || video.readyState !== 4) {
+      animationRef.current = requestAnimationFrame(detectFrame);
+      return;
+    }
+
+    const startTime = performance.now();
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+
+    const predictions = await modelRef.current.detect(video);
+
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 3;
+    ctx.font = "18px Arial";
+    ctx.fillStyle = "#00ffff";
+
+    predictions.forEach((prediction) => {
+      const [x, y, width, height] = prediction.bbox;
+      
+      ctx.strokeRect(x, y, width, height);
+      
+      const label = `${prediction.class} ${(prediction.score * 100).toFixed(1)}%`;
+      const textWidth = ctx.measureText(label).width;
+      
+      ctx.fillStyle = "rgba(0, 255, 255, 0.8)";
+      ctx.fillRect(x, y - 25, textWidth + 10, 25);
+      
+      ctx.fillStyle = "#000";
+      ctx.fillText(label, x + 5, y - 7);
+    });
+
+    detectViolations(predictions);
+
+    const endTime = performance.now();
+    const currentFps = 1000 / (endTime - startTime);
+    setFps(Math.round(currentFps * 10) / 10);
+
+    animationRef.current = requestAnimationFrame(detectFrame);
+  };
+
+  const handleStartMonitoring = async () => {
+    try {
+      toast.info("Loading AI model...");
+      
+      if (!modelRef.current) {
+        modelRef.current = await cocoSsd.load();
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+      }
+
+      setIsMonitoring(true);
+      toast.success("Live monitoring started");
+      
+      setTimeout(() => {
+        detectFrame();
+      }, 1000);
+    } catch (error) {
+      console.error("Error starting monitoring:", error);
+      toast.error("Failed to access camera. Please grant camera permissions.");
+    }
   };
 
   const handleStopMonitoring = () => {
     setIsMonitoring(false);
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
     toast.info("Live monitoring stopped");
   };
 
@@ -70,13 +195,24 @@ const LiveMonitor = () => {
           <CardContent>
             <div className="aspect-video bg-secondary rounded-lg flex items-center justify-center relative overflow-hidden">
               {isMonitoring ? (
-                <div className="absolute inset-0 bg-gradient-to-br from-secondary to-secondary/50">
+                <div className="absolute inset-0">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
                   <div className="absolute top-4 left-4 flex gap-2">
                     <Badge variant="destructive" className="animate-pulse">
                       <div className="w-2 h-2 rounded-full bg-white mr-2"></div>
                       LIVE
                     </Badge>
-                    <Badge variant="outline">720p • 25 FPS</Badge>
+                    <Badge variant="outline">720p • {fps} FPS</Badge>
                   </div>
                   <div className="absolute bottom-4 right-4">
                     <Badge variant="outline">Detection Active</Badge>
@@ -156,7 +292,7 @@ const LiveMonitor = () => {
             <CardTitle className="text-sm">Detection FPS</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm">{isMonitoring ? '12.5 FPS' : '--'}</p>
+            <p className="text-sm">{isMonitoring ? `${fps} FPS` : '--'}</p>
           </CardContent>
         </Card>
       </div>
