@@ -4,10 +4,9 @@ import { AlertTriangle, CheckCircle, Activity, Camera } from "lucide-react";
 
 const Dashboard = () => {
   const stats = [
-    { title: "Active Cameras", value: "8", icon: Camera, color: "primary" },
-    { title: "Violations Today", value: "23", icon: AlertTriangle, color: "warning" },
-    { title: "Safe Operations", value: "142", icon: CheckCircle, color: "success" },
-    { title: "Detection Rate", value: "98.5%", icon: Activity, color: "primary" },
+    { title: "Videos Analyzed", value: "12", icon: Camera, color: "primary" },
+    { title: "Total Violations", value: "23", icon: AlertTriangle, color: "warning" },
+    { title: "Detection Accuracy", value: "98.5%", icon: Activity, color: "primary" },
   ];
 
   const recentViolations = [
@@ -23,10 +22,10 @@ const Dashboard = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Safety Monitoring Dashboard
+            Safety Analysis Dashboard
           </h1>
           <p className="text-muted-foreground mt-1">
-            Real-time violation detection for mining operations
+            Video analysis and violation detection for mining operations
           </p>
         </div>
         <Badge variant="outline" className="border-success text-success">

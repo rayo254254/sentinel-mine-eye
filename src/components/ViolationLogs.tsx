@@ -2,19 +2,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download, Filter } from "lucide-react";
+import { Download, Filter, Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const ViolationLogs = () => {
+  const navigate = useNavigate();
+  
   const logs = [
-    { id: 1, timestamp: "2025-10-13 14:23:45", violation: "No Helmet", zone: "A-3", confidence: "94.2%", frame: 1245, severity: "critical" },
-    { id: 2, timestamp: "2025-10-13 14:18:32", violation: "No Vest", zone: "B-1", confidence: "89.7%", frame: 987, severity: "warning" },
-    { id: 3, timestamp: "2025-10-13 14:15:18", violation: "Phone Usage", zone: "A-2", confidence: "96.5%", frame: 756, severity: "warning" },
-    { id: 4, timestamp: "2025-10-13 14:12:05", violation: "Too Close to Machinery", zone: "C-4", confidence: "91.3%", frame: 634, severity: "critical" },
-    { id: 5, timestamp: "2025-10-13 14:08:47", violation: "Missing Gloves", zone: "B-3", confidence: "87.9%", frame: 498, severity: "warning" },
-    { id: 6, timestamp: "2025-10-13 14:05:21", violation: "Unsafe Posture", zone: "A-1", confidence: "88.4%", frame: 342, severity: "warning" },
-    { id: 7, timestamp: "2025-10-13 14:02:10", violation: "No Helmet", zone: "C-2", confidence: "95.8%", frame: 189, severity: "critical" },
-    { id: 8, timestamp: "2025-10-13 13:58:33", violation: "Restricted Zone Entry", zone: "A-4", confidence: "93.1%", frame: 67, severity: "critical" },
+    { id: 1, timestamp: "2025-10-13 14:23:45", violation: "No Helmet", zone: "A-3", confidence: "94.2%", frame: 1245, severity: "critical", videoId: "video_1" },
+    { id: 2, timestamp: "2025-10-13 14:18:32", violation: "No Vest", zone: "B-1", confidence: "89.7%", frame: 987, severity: "warning", videoId: "video_1" },
+    { id: 3, timestamp: "2025-10-13 14:15:18", violation: "Phone Usage", zone: "A-2", confidence: "96.5%", frame: 756, severity: "warning", videoId: "video_2" },
+    { id: 4, timestamp: "2025-10-13 14:12:05", violation: "Too Close to Machinery", zone: "C-4", confidence: "91.3%", frame: 634, severity: "critical", videoId: "video_2" },
+    { id: 5, timestamp: "2025-10-13 14:08:47", violation: "Missing Gloves", zone: "B-3", confidence: "87.9%", frame: 498, severity: "warning", videoId: "video_3" },
+    { id: 6, timestamp: "2025-10-13 14:05:21", violation: "Unsafe Posture", zone: "A-1", confidence: "88.4%", frame: 342, severity: "warning", videoId: "video_3" },
+    { id: 7, timestamp: "2025-10-13 14:02:10", violation: "No Helmet", zone: "C-2", confidence: "95.8%", frame: 189, severity: "critical", videoId: "video_4" },
+    { id: 8, timestamp: "2025-10-13 13:58:33", violation: "Restricted Zone Entry", zone: "A-4", confidence: "93.1%", frame: 67, severity: "critical", videoId: "video_4" },
   ];
+
+  const handleTimestampClick = (frame: number, videoId: string) => {
+    // Navigate to upload page with frame and video parameters
+    navigate(`/upload?video=${videoId}&frame=${frame}`);
+  };
 
   const handleExport = () => {
     // Simulate CSV export
@@ -55,7 +63,7 @@ const ViolationLogs = () => {
       <Card className="shadow-card border-border">
         <CardHeader>
           <CardTitle>Detection History</CardTitle>
-          <CardDescription>All violations logged from video analysis and live monitoring</CardDescription>
+          <CardDescription>All violations detected from uploaded video analysis</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -72,7 +80,15 @@ const ViolationLogs = () => {
             <TableBody>
               {logs.map((log) => (
                 <TableRow key={log.id}>
-                  <TableCell className="font-mono text-sm">{log.timestamp}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    <button
+                      onClick={() => handleTimestampClick(log.frame, log.videoId)}
+                      className="flex items-center gap-2 text-primary hover:underline cursor-pointer group"
+                    >
+                      <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {log.timestamp}
+                    </button>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={log.severity === "critical" ? "destructive" : "outline"} className={log.severity === "warning" ? "border-warning text-warning" : ""}>
                       {log.violation}
