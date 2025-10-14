@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Index from "./pages/Index";
-import Live from "./pages/Live";
 import Upload from "./pages/Upload";
 import Logs from "./pages/Logs";
 import Models from "./pages/Models";
@@ -24,7 +23,6 @@ const App = () => (
           <main className="flex-1 overflow-y-auto p-8">
             <Routes>
               <Route path="/" element={<Index />} />
-              <Route path="/live" element={<Live />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/models" element={<Models />} />

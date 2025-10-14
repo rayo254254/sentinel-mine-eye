@@ -1,13 +1,12 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Home, Video, Activity, FileText, Settings, ShieldAlert } from "lucide-react";
+import { Home, Video, FileText, Settings, ShieldAlert } from "lucide-react";
 
 const Sidebar = () => {
   const location = useLocation();
 
   const links = [
     { to: "/", label: "Dashboard", icon: Home },
-    { to: "/live", label: "Live Monitor", icon: Activity },
     { to: "/upload", label: "Video Analysis", icon: Video },
     { to: "/logs", label: "Violation Logs", icon: FileText },
     { to: "/models", label: "Model Management", icon: Settings },
