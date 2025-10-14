@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Upload, Play, X } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const VideoUpload = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -39,11 +40,30 @@ const VideoUpload = () => {
     if (!selectedFile) return;
     
     setIsAnalyzing(true);
-    // Simulate API call to backend
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    toast.info("Analyzing video with YOLO... This may take a moment.");
     
-    toast.success("Analysis complete! Check logs for violations detected.");
-    setIsAnalyzing(false);
+    try {
+      const formData = new FormData();
+      formData.append('video', selectedFile);
+      formData.append('videoName', selectedFile.name);
+      
+      const { data, error } = await supabase.functions.invoke('analyze-video', {
+        body: formData,
+      });
+      
+      if (error) throw error;
+      
+      if (data.success) {
+        toast.success(`Analysis complete! Found ${data.violations} violations. Check logs for details.`);
+      } else {
+        toast.error("Analysis failed: " + data.error);
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+      toast.error("Failed to analyze video. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleRemove = () => {

@@ -1,20 +1,85 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle, Activity, Camera } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
+  const [totalViolations, setTotalViolations] = useState(0);
+  const [recentViolations, setRecentViolations] = useState<any[]>([]);
+  const [uniqueVideos, setUniqueVideos] = useState(0);
+  
+  useEffect(() => {
+    fetchStats();
+    fetchRecentViolations();
+    
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('dashboard-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'violations'
+        },
+        () => {
+          fetchStats();
+          fetchRecentViolations();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+  
+  const fetchStats = async () => {
+    try {
+      const { data, count } = await (supabase as any)
+        .from('violations')
+        .select('*', { count: 'exact' });
+      
+      setTotalViolations(count || 0);
+      
+      // Count unique video sources
+      if (data) {
+        const uniqueSources = new Set(data.map((v: any) => v.source_name));
+        setUniqueVideos(uniqueSources.size);
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+  
+  const fetchRecentViolations = async () => {
+    try {
+      const { data } = await (supabase as any)
+        .from('violations')
+        .select('*')
+        .order('detected_at', { ascending: false })
+        .limit(5);
+      
+      setRecentViolations(data || []);
+    } catch (error) {
+      console.error('Error fetching recent violations:', error);
+    }
+  };
+  
+  const getTimeAgo = (timestamp: string) => {
+    const minutes = Math.floor((Date.now() - new Date(timestamp).getTime()) / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+  
   const stats = [
-    { title: "Videos Analyzed", value: "12", icon: Camera, color: "primary" },
-    { title: "Total Violations", value: "23", icon: AlertTriangle, color: "warning" },
+    { title: "Videos Analyzed", value: uniqueVideos.toString(), icon: Camera, color: "primary" },
+    { title: "Total Violations", value: totalViolations.toString(), icon: AlertTriangle, color: "warning" },
     { title: "Detection Accuracy", value: "98.5%", icon: Activity, color: "primary" },
-  ];
-
-  const recentViolations = [
-    { id: 1, type: "No Helmet", worker: "Zone A-3", time: "2 min ago", severity: "critical" },
-    { id: 2, type: "No Vest", worker: "Zone B-1", time: "5 min ago", severity: "warning" },
-    { id: 3, type: "Phone Usage", worker: "Zone A-2", time: "8 min ago", severity: "warning" },
-    { id: 4, type: "Too Close to Machinery", worker: "Zone C-4", time: "12 min ago", severity: "critical" },
-    { id: 5, type: "Missing Gloves", worker: "Zone B-3", time: "15 min ago", severity: "warning" },
   ];
 
   return (
@@ -59,23 +124,29 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {recentViolations.map((violation) => (
-              <div
-                key={violation.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Badge
-                    variant={violation.severity === "critical" ? "destructive" : "outline"}
-                    className={violation.severity === "warning" ? "border-warning text-warning" : ""}
-                  >
-                    {violation.type}
-                  </Badge>
-                  <span className="text-sm text-foreground">{violation.worker}</span>
+            {recentViolations.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">
+                No violations detected yet. Upload a video to start analysis.
+              </p>
+            ) : (
+              recentViolations.map((violation) => (
+                <div
+                  key={violation.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Badge
+                      variant={violation.metadata?.severity === "critical" ? "destructive" : "outline"}
+                      className={violation.metadata?.severity === "warning" ? "border-warning text-warning" : ""}
+                    >
+                      {violation.violation_type}
+                    </Badge>
+                    <span className="text-sm text-foreground">{violation.metadata?.zone || 'N/A'}</span>
+                  </div>
+                  <span className="text-sm text-muted-foreground">{getTimeAgo(violation.detected_at)}</span>
                 </div>
-                <span className="text-sm text-muted-foreground">{violation.time}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

@@ -4,30 +4,65 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Download, Filter, Play } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const ViolationLogs = () => {
   const navigate = useNavigate();
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   
-  const logs = [
-    { id: 1, timestamp: "2025-10-13 14:23:45", violation: "No Helmet", zone: "A-3", confidence: "94.2%", frame: 1245, severity: "critical", videoId: "video_1" },
-    { id: 2, timestamp: "2025-10-13 14:18:32", violation: "No Vest", zone: "B-1", confidence: "89.7%", frame: 987, severity: "warning", videoId: "video_1" },
-    { id: 3, timestamp: "2025-10-13 14:15:18", violation: "Phone Usage", zone: "A-2", confidence: "96.5%", frame: 756, severity: "warning", videoId: "video_2" },
-    { id: 4, timestamp: "2025-10-13 14:12:05", violation: "Too Close to Machinery", zone: "C-4", confidence: "91.3%", frame: 634, severity: "critical", videoId: "video_2" },
-    { id: 5, timestamp: "2025-10-13 14:08:47", violation: "Missing Gloves", zone: "B-3", confidence: "87.9%", frame: 498, severity: "warning", videoId: "video_3" },
-    { id: 6, timestamp: "2025-10-13 14:05:21", violation: "Unsafe Posture", zone: "A-1", confidence: "88.4%", frame: 342, severity: "warning", videoId: "video_3" },
-    { id: 7, timestamp: "2025-10-13 14:02:10", violation: "No Helmet", zone: "C-2", confidence: "95.8%", frame: 189, severity: "critical", videoId: "video_4" },
-    { id: 8, timestamp: "2025-10-13 13:58:33", violation: "Restricted Zone Entry", zone: "A-4", confidence: "93.1%", frame: 67, severity: "critical", videoId: "video_4" },
-  ];
+  useEffect(() => {
+    fetchViolations();
+    
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('violations-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'violations'
+        },
+        () => {
+          fetchViolations();
+          toast.success("New violation detected!");
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+  
+  const fetchViolations = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('violations')
+        .select('*')
+        .order('detected_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      setLogs(data || []);
+    } catch (error) {
+      console.error('Error fetching violations:', error);
+      toast.error("Failed to load violations");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleTimestampClick = (frame: number, videoId: string) => {
-    // Navigate to upload page with frame and video parameters
-    navigate(`/upload?video=${videoId}&frame=${frame}`);
+  const handleTimestampClick = (frame: number, videoName: string) => {
+    navigate(`/upload?video=${encodeURIComponent(videoName)}&frame=${frame}`);
   };
 
   const handleExport = () => {
-    // Simulate CSV export
     const csv = "timestamp,violation,zone,confidence,frame,severity\n" + 
-      logs.map(log => `${log.timestamp},${log.violation},${log.zone},${log.confidence},${log.frame},${log.severity}`).join("\n");
+      logs.map(log => `${log.detected_at},${log.violation_type},${log.metadata?.zone || 'N/A'},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.frame_number},${log.metadata?.severity || 'N/A'}`).join("\n");
     
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -78,32 +113,51 @@ const ViolationLogs = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {logs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell className="font-mono text-sm">
-                    <button
-                      onClick={() => handleTimestampClick(log.frame, log.videoId)}
-                      className="flex items-center gap-2 text-primary hover:underline cursor-pointer group"
-                    >
-                      <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      {log.timestamp}
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={log.severity === "critical" ? "destructive" : "outline"} className={log.severity === "warning" ? "border-warning text-warning" : ""}>
-                      {log.violation}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{log.zone}</TableCell>
-                  <TableCell className="text-primary font-medium">{log.confidence}</TableCell>
-                  <TableCell className="font-mono text-sm">#{log.frame}</TableCell>
-                  <TableCell>
-                    <Badge variant={log.severity === "critical" ? "destructive" : "secondary"}>
-                      {log.severity}
-                    </Badge>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    Loading violations...
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : logs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    No violations detected yet. Upload a video to start analysis.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                logs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="font-mono text-sm">
+                      <button
+                        onClick={() => handleTimestampClick(log.frame_number, log.source_name)}
+                        className="flex items-center gap-2 text-primary hover:underline cursor-pointer group"
+                      >
+                        <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {new Date(log.detected_at).toLocaleString()}
+                      </button>
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant={log.metadata?.severity === "critical" ? "destructive" : "outline"} 
+                        className={log.metadata?.severity === "warning" ? "border-warning text-warning" : ""}
+                      >
+                        {log.violation_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{log.metadata?.zone || 'N/A'}</TableCell>
+                    <TableCell className="text-primary font-medium">
+                      {(parseFloat(log.confidence) * 100).toFixed(1)}%
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">#{log.frame_number}</TableCell>
+                    <TableCell>
+                      <Badge variant={log.metadata?.severity === "critical" ? "destructive" : "secondary"}>
+                        {log.metadata?.severity || 'unknown'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
