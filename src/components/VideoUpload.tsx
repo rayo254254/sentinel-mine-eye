@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, Play, X } from "lucide-react";
@@ -7,6 +8,20 @@ import { toast } from "sonner";
 const VideoUpload = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [searchParams] = useSearchParams();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  const videoId = searchParams.get("video");
+  const frameNumber = searchParams.get("frame");
+
+  useEffect(() => {
+    if (videoRef.current && frameNumber) {
+      // Assuming 30 fps, convert frame to seconds
+      const timeInSeconds = parseInt(frameNumber) / 30;
+      videoRef.current.currentTime = timeInSeconds;
+      toast.info(`Jumped to violation at frame ${frameNumber}`);
+    }
+  }, [frameNumber]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -46,6 +61,33 @@ const VideoUpload = () => {
           Upload recorded videos for safety violation detection
         </p>
       </div>
+
+      {videoId && (
+        <Card className="shadow-card border-border">
+          <CardHeader>
+            <CardTitle>Video Player</CardTitle>
+            <CardDescription>
+              Viewing violation from {videoId} at frame {frameNumber}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <video 
+              ref={videoRef}
+              controls 
+              className="w-full rounded-lg"
+              onLoadedMetadata={() => {
+                if (videoRef.current && frameNumber) {
+                  const timeInSeconds = parseInt(frameNumber) / 30;
+                  videoRef.current.currentTime = timeInSeconds;
+                }
+              }}
+            >
+              <source src={`/demo-videos/${videoId}.mp4`} type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-card border-border">
         <CardHeader>
