@@ -56,8 +56,8 @@ const ViolationLogs = () => {
     }
   };
 
-  const handleTimestampClick = (frame: number, videoName: string) => {
-    navigate(`/upload?video=${encodeURIComponent(videoName)}&frame=${frame}`);
+  const handleTimestampClick = (frame: number, videoPath: string) => {
+    navigate(`/upload?video=${encodeURIComponent(videoPath)}&frame=${frame}`);
   };
 
   const handleExport = () => {
@@ -130,7 +130,7 @@ const ViolationLogs = () => {
                   <TableRow key={log.id}>
                     <TableCell className="font-mono text-sm">
                       <button
-                        onClick={() => handleTimestampClick(log.frame_number, log.source_name)}
+                        onClick={() => handleTimestampClick(log.frame_number, log.video_path)}
                         className="flex items-center gap-2 text-primary hover:underline cursor-pointer group"
                       >
                         <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />

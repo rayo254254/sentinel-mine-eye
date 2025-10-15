@@ -10,10 +10,25 @@ const VideoUpload = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [searchParams] = useSearchParams();
+  const [videoUrl, setVideoUrl] = useState<string>("");
   const videoRef = useRef<HTMLVideoElement>(null);
   
-  const videoId = searchParams.get("video");
+  const videoPath = searchParams.get("video");
   const frameNumber = searchParams.get("frame");
+
+  useEffect(() => {
+    const loadVideo = async () => {
+      if (videoPath) {
+        const { data } = supabase.storage
+          .from('videos')
+          .getPublicUrl(videoPath);
+        
+        setVideoUrl(data.publicUrl);
+      }
+    };
+    
+    loadVideo();
+  }, [videoPath]);
 
   useEffect(() => {
     if (videoRef.current && frameNumber) {
@@ -22,7 +37,7 @@ const VideoUpload = () => {
       videoRef.current.currentTime = timeInSeconds;
       toast.info(`Jumped to violation at frame ${frameNumber}`);
     }
-  }, [frameNumber]);
+  }, [frameNumber, videoUrl]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -82,12 +97,12 @@ const VideoUpload = () => {
         </p>
       </div>
 
-      {videoId && (
+      {videoPath && videoUrl && (
         <Card className="shadow-card border-border">
           <CardHeader>
             <CardTitle>Video Player</CardTitle>
             <CardDescription>
-              Viewing violation from {videoId} at frame {frameNumber}
+              Viewing violation at frame {frameNumber}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -95,6 +110,7 @@ const VideoUpload = () => {
               ref={videoRef}
               controls 
               className="w-full rounded-lg"
+              src={videoUrl}
               onLoadedMetadata={() => {
                 if (videoRef.current && frameNumber) {
                   const timeInSeconds = parseInt(frameNumber) / 30;
@@ -102,7 +118,6 @@ const VideoUpload = () => {
                 }
               }}
             >
-              <source src={`/demo-videos/${videoId}.mp4`} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           </CardContent>

@@ -35,6 +35,24 @@ serve(async (req) => {
     // Convert video to array buffer
     const videoBuffer = await videoFile.arrayBuffer();
     
+    // Upload video to storage
+    const timestamp = Date.now();
+    const videoPath = `${timestamp}_${videoName}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(videoPath, videoBuffer, {
+        contentType: videoFile.type,
+        upsert: false
+      });
+    
+    if (uploadError) {
+      console.error('Error uploading video:', uploadError);
+      throw new Error(`Failed to upload video: ${uploadError.message}`);
+    }
+    
+    console.log(`Video uploaded to storage: ${videoPath}`);
+    
     // Simulate frame extraction and analysis
     // In a real implementation, you'd use FFmpeg or similar to extract frames
     const frameCount = Math.floor(Math.random() * 10) + 5; // Simulate 5-15 frames
@@ -65,6 +83,7 @@ serve(async (req) => {
           confidence: (Math.random() * 0.15 + 0.85).toFixed(3), // 85-100% confidence
           source_type: 'video',
           source_name: videoName,
+          video_path: videoPath,
           frame_number: frameNumber,
           metadata: {
             zone: zones[Math.floor(Math.random() * zones.length)],
