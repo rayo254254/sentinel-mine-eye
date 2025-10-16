@@ -10,9 +10,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 const ModelManagement = () => {
   const modelFileRef = useRef<HTMLInputElement>(null);
   const datasetFileRef = useRef<HTMLInputElement>(null);
+  const modelFolderRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [uploadingModel, setUploadingModel] = useState(false);
   const [uploadingDataset, setUploadingDataset] = useState(false);
+  const [uploadingFolder, setUploadingFolder] = useState(false);
 
   // Fetch uploaded models from database
   const { data: uploadedModels = [], refetch } = useQuery({
@@ -101,6 +103,63 @@ const ModelManagement = () => {
     }
   };
 
+  const handleUploadFolder = () => {
+    modelFolderRef.current?.click();
+  };
+
+  const handleFolderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingFolder(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const folderName = `trained_model_${Date.now()}`;
+      let totalSize = 0;
+      const uploadedFiles: string[] = [];
+
+      // Upload each file in the folder
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        totalSize += file.size;
+        
+        const filePath = `models/${folderName}/${file.webkitRelativePath || file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('models')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+        uploadedFiles.push(file.name);
+      }
+
+      // Save folder metadata to database
+      const { error: dbError } = await supabase
+        .from('models')
+        .insert({
+          name: folderName,
+          file_path: `models/${folderName}`,
+          type: 'trained_folder',
+          file_size: totalSize,
+          mime_type: 'application/x-folder',
+          uploaded_by: user?.id,
+          metadata: {
+            files: uploadedFiles,
+            file_count: files.length
+          }
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success(`Trained model folder uploaded: ${files.length} files`);
+      refetch();
+    } catch (error: any) {
+      toast.error('Failed to upload folder: ' + error.message);
+    } finally {
+      setUploadingFolder(false);
+      if (modelFolderRef.current) modelFolderRef.current.value = '';
+    }
+  };
+
   const handleDatasetFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -156,6 +215,13 @@ const ModelManagement = () => {
         ref={datasetFileRef}
         onChange={handleDatasetFileChange}
         accept=".zip"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={modelFolderRef}
+        onChange={handleFolderUpload}
+        {...({ webkitdirectory: "", directory: "", multiple: true } as any)}
         className="hidden"
       />
 
@@ -237,7 +303,7 @@ const ModelManagement = () => {
               <CardTitle>Upload New Model</CardTitle>
               <CardDescription>Upload a trained .pt or .onnx model file</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <Button onClick={handleUploadModel} className="w-full" disabled={uploadingModel}>
                 {uploadingModel ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -246,6 +312,43 @@ const ModelManagement = () => {
                 )}
                 {uploadingModel ? 'Uploading...' : 'Upload Model File'}
               </Button>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+              <Button onClick={handleUploadFolder} variant="outline" className="w-full" disabled={uploadingFolder}>
+                {uploadingFolder ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                {uploadingFolder ? 'Uploading Folder...' : 'Upload Trained Model Folder'}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Upload a complete trained model folder with weights, config, and label files
+              </p>
+              {uploadedModels.filter(m => m.type === 'trained_folder').length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-medium">Uploaded Folders:</p>
+                  {uploadedModels
+                    .filter(m => m.type === 'trained_folder')
+                    .map((folder) => (
+                      <div
+                        key={folder.id}
+                        className="p-3 rounded-lg border border-border bg-secondary text-xs"
+                      >
+                        <p className="font-mono font-medium">{folder.name}</p>
+                        <p className="text-muted-foreground mt-1">
+                          {(folder.metadata as any)?.file_count || 0} files • {(folder.file_size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

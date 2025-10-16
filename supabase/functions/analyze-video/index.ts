@@ -30,11 +30,26 @@ serve(async (req) => {
       .eq('is_active', true)
       .single();
     
-    if (activeModel) {
-      console.log(`Using active model: ${activeModel.name} (${activeModel.file_path})`);
+    // Also check for trained model folders
+    const { data: trainedFolders } = await supabase
+      .from('models')
+      .select('*')
+      .eq('type', 'trained_folder')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    let modelToUse = activeModel;
+    if (!modelToUse && trainedFolders && trainedFolders.length > 0) {
+      modelToUse = trainedFolders[0];
+      console.log(`Using trained model folder: ${modelToUse.name} (${modelToUse.file_path})`);
+    } else if (modelToUse) {
+      console.log(`Using active model: ${modelToUse.name} (${modelToUse.file_path})`);
     } else {
-      console.log('No active model found, using default detection');
+      console.log('No custom model found, using default detection');
     }
+    
+    // In production, modelToUse.file_path would be used to load the actual model
+    // and improve detection accuracy based on the trained model
     
     const formData = await req.formData();
     const videoFile = formData.get('video') as File;
