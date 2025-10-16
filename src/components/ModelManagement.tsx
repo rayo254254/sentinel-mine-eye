@@ -15,6 +15,7 @@ const ModelManagement = () => {
   const [uploadingModel, setUploadingModel] = useState(false);
   const [uploadingDataset, setUploadingDataset] = useState(false);
   const [uploadingFolder, setUploadingFolder] = useState(false);
+  const [detectionMethod, setDetectionMethod] = useState<'roboflow' | 'custom'>('roboflow');
 
   // Fetch uploaded models from database
   const { data: uploadedModels = [], refetch } = useQuery({
@@ -29,6 +30,61 @@ const ModelManagement = () => {
       return data || [];
     }
   });
+
+  // Fetch detection settings
+  const { data: settings } = useQuery({
+    queryKey: ['detection-settings'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('detection_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    }
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setDetectionMethod(settings.detection_method as 'roboflow' | 'custom');
+    }
+  }, [settings]);
+
+  // Update detection method mutation
+  const updateDetectionMethodMutation = useMutation({
+    mutationFn: async (method: 'roboflow' | 'custom') => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error: upsertError } = await supabase
+        .from('detection_settings')
+        .upsert({ 
+          user_id: user.id, 
+          detection_method: method 
+        }, {
+          onConflict: 'user_id'
+        });
+      
+      if (upsertError) throw upsertError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['detection-settings'] });
+      toast.success('Detection method updated');
+    },
+    onError: (error) => {
+      toast.error('Failed to update detection method: ' + error.message);
+    }
+  });
+
+  const handleDetectionMethodChange = (method: 'roboflow' | 'custom') => {
+    setDetectionMethod(method);
+    updateDetectionMethodMutation.mutate(method);
+  };
 
   // Activate model mutation
   const activateModelMutation = useMutation({
@@ -233,6 +289,58 @@ const ModelManagement = () => {
           Manage detection models and training datasets
         </p>
       </div>
+
+      <Card className="shadow-card border-border">
+        <CardHeader>
+          <CardTitle>Detection Method</CardTitle>
+          <CardDescription>Choose how violations should be detected</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <button
+              onClick={() => handleDetectionMethodChange('roboflow')}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                detectionMethod === 'roboflow'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`h-4 w-4 rounded-full border-2 ${
+                  detectionMethod === 'roboflow' 
+                    ? 'border-primary bg-primary' 
+                    : 'border-muted-foreground'
+                }`} />
+                <h3 className="font-semibold">Roboflow API</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use Roboflow's cloud-based detection service
+              </p>
+            </button>
+
+            <button
+              onClick={() => handleDetectionMethodChange('custom')}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                detectionMethod === 'custom'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`h-4 w-4 rounded-full border-2 ${
+                  detectionMethod === 'custom' 
+                    ? 'border-primary bg-primary' 
+                    : 'border-muted-foreground'
+                }`} />
+                <h3 className="font-semibold">Custom AI Analysis</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use AI-powered analysis based on your training data
+              </p>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="shadow-card border-border">

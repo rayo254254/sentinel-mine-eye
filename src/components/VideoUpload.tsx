@@ -59,9 +59,16 @@ const VideoUpload = () => {
     toast.info("Analyzing video with YOLO... This may take a moment.");
     
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("You must be logged in to analyze videos");
+        return;
+      }
+
       const formData = new FormData();
       formData.append('video', selectedFile);
       formData.append('videoName', selectedFile.name);
+      formData.append('userId', user.id);
       
       const { data, error } = await supabase.functions.invoke('analyze-video', {
         body: formData,

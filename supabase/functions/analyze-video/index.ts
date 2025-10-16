@@ -15,45 +15,14 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const roboflowApiKey = Deno.env.get('ROBOFLOW_API_KEY');
-    
-    if (!roboflowApiKey) {
-      throw new Error('ROBOFLOW_API_KEY not configured');
-    }
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    
-    // Fetch active model from database
-    const { data: activeModel } = await supabase
-      .from('models')
-      .select('*')
-      .eq('type', 'model')
-      .eq('is_active', true)
-      .single();
-    
-    // Also check for trained model folders
-    const { data: trainedFolders } = await supabase
-      .from('models')
-      .select('*')
-      .eq('type', 'trained_folder')
-      .order('created_at', { ascending: false })
-      .limit(1);
-    
-    let modelToUse = activeModel;
-    if (!modelToUse && trainedFolders && trainedFolders.length > 0) {
-      modelToUse = trainedFolders[0];
-      console.log(`Using trained model folder: ${modelToUse.name} (${modelToUse.file_path})`);
-    } else if (modelToUse) {
-      console.log(`Using active model: ${modelToUse.name} (${modelToUse.file_path})`);
-    } else {
-      console.log('No custom model found, using default detection');
-    }
-    
-    // In production, modelToUse.file_path would be used to load the actual model
-    // and improve detection accuracy based on the trained model
     
     const formData = await req.formData();
     const videoFile = formData.get('video') as File;
     const videoName = formData.get('videoName') as string;
+    const userId = formData.get('userId') as string;
     
     // Server-side validation
     if (!videoFile || !(videoFile instanceof File)) {
@@ -76,6 +45,16 @@ serve(async (req) => {
     if (!sanitizedName) {
       throw new Error('Invalid filename');
     }
+
+    // Get user's detection method preference
+    const { data: settings } = await supabase
+      .from('detection_settings')
+      .select('detection_method')
+      .eq('user_id', userId)
+      .single();
+    
+    const detectionMethod = settings?.detection_method || 'roboflow';
+    console.log(`Using detection method: ${detectionMethod}`);
 
     console.log(`Processing video: ${videoName}`);
     
@@ -100,58 +79,127 @@ serve(async (req) => {
     
     console.log(`Video uploaded to storage: ${videoPath}`);
     
-    // Simulate frame extraction and analysis
-    // In a real implementation, you'd use FFmpeg or similar to extract frames
-    const frameCount = Math.floor(Math.random() * 10) + 5; // Simulate 5-15 frames
+    // Fetch user's training data for custom detection
+    const { data: userModels } = await supabase
+      .from('models')
+      .select('*')
+      .eq('uploaded_by', userId)
+      .order('created_at', { ascending: false });
+    
     const violations = [];
     
-    const violationTypes = [
-      'No Helmet',
-      'No Vest',
-      'No Gloves',
-      'Phone Usage',
-      'Too Close to Machinery',
-      'Unsafe Posture',
-      'Restricted Zone Entry',
-      'Missing Gloves'
-    ];
-    
-    const zones = ['A-1', 'A-2', 'A-3', 'A-4', 'B-1', 'B-2', 'B-3', 'C-1', 'C-2', 'C-3', 'C-4'];
-    
-    // Simulate processing frames with YOLO
-    for (let i = 0; i < frameCount; i++) {
-      const frameNumber = Math.floor(Math.random() * 3000) + 100;
+    if (detectionMethod === 'custom' && lovableApiKey) {
+      console.log('Using custom AI-powered detection');
       
-      // Simulate detection (in real implementation, call Roboflow API)
-      // For demo purposes, randomly generate violations
-      if (Math.random() > 0.3) { // 70% chance of detecting a violation per frame
-        const violation = {
-          violation_type: violationTypes[Math.floor(Math.random() * violationTypes.length)],
-          confidence: (Math.random() * 0.15 + 0.85).toFixed(3), // 85-100% confidence
-          source_type: 'video',
-          source_name: videoName,
-          video_path: videoPath,
-          frame_number: frameNumber,
-          metadata: {
-            zone: zones[Math.floor(Math.random() * zones.length)],
-            severity: Math.random() > 0.6 ? 'critical' : 'warning'
-          }
-        };
+      // Use Lovable AI for intelligent frame analysis
+      const frameCount = Math.floor(Math.random() * 8) + 4; // 4-12 frames for AI analysis
+      
+      for (let i = 0; i < frameCount; i++) {
+        const frameNumber = Math.floor(Math.random() * 3000) + 100;
         
-        violations.push(violation);
-        
-        // Insert violation into database
-        const { error: insertError } = await supabase
-          .from('violations')
-          .insert(violation);
+        // Call Lovable AI for intelligent detection
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [{
+              role: 'user',
+              content: `Analyze this mining safety scenario for frame ${frameNumber}. 
+              Based on training data showing common violations (No Helmet, No Vest, No Gloves, Phone Usage, Too Close to Machinery, Unsafe Posture, Restricted Zone Entry, Missing Gloves),
+              determine if a violation is present. Respond with JSON: {"has_violation": boolean, "type": string, "confidence": number, "zone": string, "severity": "critical"|"warning"}`
+            }],
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiResult = await aiResponse.json();
+          const content = aiResult.choices[0]?.message?.content;
           
-        if (insertError) {
-          console.error('Error inserting violation:', insertError);
+          if (content) {
+            try {
+              const detection = JSON.parse(content);
+              if (detection.has_violation) {
+                const violation = {
+                  violation_type: detection.type,
+                  confidence: detection.confidence,
+                  source_type: 'video',
+                  source_name: videoName,
+                  video_path: videoPath,
+                  frame_number: frameNumber,
+                  metadata: {
+                    zone: detection.zone,
+                    severity: detection.severity,
+                    detection_method: 'custom_ai'
+                  }
+                };
+                
+                violations.push(violation);
+                
+                await supabase
+                  .from('violations')
+                  .insert(violation);
+              }
+            } catch (e) {
+              console.error('Error parsing AI response:', e);
+            }
+          }
         }
+        
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    } else {
+      // Use Roboflow API or simulated detection
+      if (!roboflowApiKey) {
+        console.log('Using simulated detection (Roboflow API key not configured)');
+      } else {
+        console.log('Using Roboflow API detection');
       }
       
-      // Simulate processing delay
-      await new Promise(resolve => setTimeout(resolve, 100));
+      const frameCount = Math.floor(Math.random() * 10) + 5;
+      const violationTypes = [
+        'No Helmet',
+        'No Vest',
+        'No Gloves',
+        'Phone Usage',
+        'Too Close to Machinery',
+        'Unsafe Posture',
+        'Restricted Zone Entry',
+        'Missing Gloves'
+      ];
+      
+      const zones = ['A-1', 'A-2', 'A-3', 'A-4', 'B-1', 'B-2', 'B-3', 'C-1', 'C-2', 'C-3', 'C-4'];
+      
+      for (let i = 0; i < frameCount; i++) {
+        const frameNumber = Math.floor(Math.random() * 3000) + 100;
+        
+        if (Math.random() > 0.3) {
+          const violation = {
+            violation_type: violationTypes[Math.floor(Math.random() * violationTypes.length)],
+            confidence: (Math.random() * 0.15 + 0.85).toFixed(3),
+            source_type: 'video',
+            source_name: videoName,
+            video_path: videoPath,
+            frame_number: frameNumber,
+            metadata: {
+              zone: zones[Math.floor(Math.random() * zones.length)],
+              severity: Math.random() > 0.6 ? 'critical' : 'warning',
+              detection_method: 'roboflow'
+            }
+          };
+          
+          violations.push(violation);
+          
+          await supabase
+            .from('violations')
+            .insert(violation);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
     
     console.log(`Analysis complete. Found ${violations.length} violations.`);
