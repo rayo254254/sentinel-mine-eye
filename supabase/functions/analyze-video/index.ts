@@ -22,6 +22,20 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     
+    // Fetch active model from database
+    const { data: activeModel } = await supabase
+      .from('models')
+      .select('*')
+      .eq('type', 'model')
+      .eq('is_active', true)
+      .single();
+    
+    if (activeModel) {
+      console.log(`Using active model: ${activeModel.name} (${activeModel.file_path})`);
+    } else {
+      console.log('No active model found, using default detection');
+    }
+    
     const formData = await req.formData();
     const videoFile = formData.get('video') as File;
     const videoName = formData.get('videoName') as string;

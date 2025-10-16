@@ -1,34 +1,164 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, CheckCircle, Settings } from "lucide-react";
+import { Upload, CheckCircle, Settings, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const ModelManagement = () => {
-  const [activeModel, setActiveModel] = useState("yolov8n-safety.pt");
+  const modelFileRef = useRef<HTMLInputElement>(null);
+  const datasetFileRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const [uploadingModel, setUploadingModel] = useState(false);
+  const [uploadingDataset, setUploadingDataset] = useState(false);
 
-  const models = [
-    { name: "yolov8n-safety.pt", status: "active", accuracy: "94.2%", size: "6.2 MB", lastTrained: "2025-10-10" },
-    { name: "yolov8s-safety.pt", status: "available", accuracy: "96.5%", size: "22.5 MB", lastTrained: "2025-10-08" },
-    { name: "yolov8m-safety.pt", status: "available", accuracy: "97.8%", size: "51.8 MB", lastTrained: "2025-10-05" },
-  ];
+  // Fetch uploaded models from database
+  const { data: uploadedModels = [], refetch } = useQuery({
+    queryKey: ['uploaded-models'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('models')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    }
+  });
 
-  const handleModelSwitch = (modelName: string) => {
-    setActiveModel(modelName);
-    toast.success(`Switched to ${modelName}`);
-  };
+  // Activate model mutation
+  const activateModelMutation = useMutation({
+    mutationFn: async (modelId: string) => {
+      // Deactivate all models first
+      await supabase
+        .from('models')
+        .update({ is_active: false })
+        .neq('id', modelId);
+      
+      // Activate selected model
+      const { error } = await supabase
+        .from('models')
+        .update({ is_active: true })
+        .eq('id', modelId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['uploaded-models'] });
+      toast.success('Model activated successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to activate model: ' + error.message);
+    }
+  });
 
   const handleUploadModel = () => {
-    toast.success("Model upload feature will connect to backend API");
+    modelFileRef.current?.click();
   };
 
   const handleUploadDataset = () => {
-    toast.success("Dataset upload feature will connect to backend API");
+    datasetFileRef.current?.click();
   };
+
+  const handleModelFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingModel(true);
+    try {
+      // Upload to storage
+      const filePath = `models/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('models')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Save metadata to database
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: dbError } = await supabase
+        .from('models')
+        .insert({
+          name: file.name,
+          file_path: filePath,
+          type: 'model',
+          file_size: file.size,
+          mime_type: file.type,
+          uploaded_by: user?.id
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success('Model uploaded successfully');
+      refetch();
+    } catch (error: any) {
+      toast.error('Failed to upload model: ' + error.message);
+    } finally {
+      setUploadingModel(false);
+      if (modelFileRef.current) modelFileRef.current.value = '';
+    }
+  };
+
+  const handleDatasetFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingDataset(true);
+    try {
+      // Upload to storage
+      const filePath = `datasets/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('models')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Save metadata to database
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: dbError } = await supabase
+        .from('models')
+        .insert({
+          name: file.name,
+          file_path: filePath,
+          type: 'dataset',
+          file_size: file.size,
+          mime_type: file.type,
+          uploaded_by: user?.id
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success('Dataset uploaded successfully');
+      refetch();
+    } catch (error: any) {
+      toast.error('Failed to upload dataset: ' + error.message);
+    } finally {
+      setUploadingDataset(false);
+      if (datasetFileRef.current) datasetFileRef.current.value = '';
+    }
+  };
+
+  const activeModel = uploadedModels.find(m => m.is_active && m.type === 'model');
 
   return (
     <div className="space-y-6">
+      <input
+        type="file"
+        ref={modelFileRef}
+        onChange={handleModelFileChange}
+        accept=".pt,.onnx,.pth"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={datasetFileRef}
+        onChange={handleDatasetFileChange}
+        accept=".zip"
+        className="hidden"
+      />
+
       <div>
         <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
           Model Management
@@ -41,55 +171,63 @@ const ModelManagement = () => {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="shadow-card border-border">
           <CardHeader>
-            <CardTitle>Available Models</CardTitle>
-            <CardDescription>Select and manage YOLO detection models</CardDescription>
+            <CardTitle>Uploaded Models</CardTitle>
+            <CardDescription>Your trained YOLO detection models</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {models.map((model) => (
-              <div
-                key={model.name}
-                className={`p-4 rounded-lg border transition-colors ${
-                  model.name === activeModel
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-secondary hover:border-primary/50"
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <p className="font-mono text-sm font-medium">{model.name}</p>
-                    {model.name === activeModel && (
-                      <Badge variant="default" className="text-xs">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Active
-                      </Badge>
-                    )}
+            {uploadedModels.filter(m => m.type === 'model').length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No models uploaded yet. Upload your trained model to get started.
+              </p>
+            ) : (
+              uploadedModels
+                .filter(m => m.type === 'model')
+                .map((model) => (
+                  <div
+                    key={model.id}
+                    className={`p-4 rounded-lg border transition-colors ${
+                      model.is_active
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-secondary hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm font-medium">{model.name}</p>
+                        {model.is_active && (
+                          <Badge variant="default" className="text-xs">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Active
+                          </Badge>
+                        )}
+                      </div>
+                      {!model.is_active && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => activateModelMutation.mutate(model.id)}
+                        >
+                          Activate
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">
+                          {(model.file_size / (1024 * 1024)).toFixed(2)} MB
+                        </span>
+                        <p>Size</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">
+                          {new Date(model.created_at).toLocaleDateString()}
+                        </span>
+                        <p>Uploaded</p>
+                      </div>
+                    </div>
                   </div>
-                  {model.name !== activeModel && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleModelSwitch(model.name)}
-                    >
-                      Activate
-                    </Button>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-                  <div>
-                    <span className="font-medium text-foreground">{model.accuracy}</span>
-                    <p>Accuracy</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">{model.size}</span>
-                    <p>Size</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">{model.lastTrained}</span>
-                    <p>Last Trained</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+                ))
+            )}
           </CardContent>
         </Card>
 
@@ -100,26 +238,51 @@ const ModelManagement = () => {
               <CardDescription>Upload a trained .pt or .onnx model file</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button onClick={handleUploadModel} className="w-full">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Model File
+              <Button onClick={handleUploadModel} className="w-full" disabled={uploadingModel}>
+                {uploadingModel ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                {uploadingModel ? 'Uploading...' : 'Upload Model File'}
               </Button>
             </CardContent>
           </Card>
 
           <Card className="shadow-card border-border">
             <CardHeader>
-              <CardTitle>Training Dataset</CardTitle>
+              <CardTitle>Training Datasets</CardTitle>
               <CardDescription>Upload YOLO-format dataset for model training</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button onClick={handleUploadDataset} variant="outline" className="w-full">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Dataset (ZIP)
+              <Button onClick={handleUploadDataset} variant="outline" className="w-full" disabled={uploadingDataset}>
+                {uploadingDataset ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                {uploadingDataset ? 'Uploading...' : 'Upload Dataset (ZIP)'}
               </Button>
               <p className="text-xs text-muted-foreground">
                 Dataset should include images and labels in YOLO format
               </p>
+              {uploadedModels.filter(m => m.type === 'dataset').length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {uploadedModels
+                    .filter(m => m.type === 'dataset')
+                    .map((dataset) => (
+                      <div
+                        key={dataset.id}
+                        className="p-3 rounded-lg border border-border bg-secondary text-xs"
+                      >
+                        <p className="font-mono font-medium">{dataset.name}</p>
+                        <p className="text-muted-foreground mt-1">
+                          {(dataset.file_size / (1024 * 1024)).toFixed(2)} MB • {new Date(dataset.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
