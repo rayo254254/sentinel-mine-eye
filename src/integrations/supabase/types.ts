@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      models: {
+        Row: {
+          created_at: string | null
+          file_path: string
+          file_size: number
+          id: string
+          is_active: boolean | null
+          metadata: Json | null
+          mime_type: string | null
+          name: string
+          type: string
+          updated_at: string | null
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          file_path: string
+          file_size: number
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          mime_type?: string | null
+          name: string
+          type: string
+          updated_at?: string | null
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          file_path?: string
+          file_size?: number
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          mime_type?: string | null
+          name?: string
+          type?: string
+          updated_at?: string | null
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       violations: {
         Row: {
           confidence: number
