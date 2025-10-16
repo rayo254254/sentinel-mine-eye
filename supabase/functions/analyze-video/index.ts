@@ -40,8 +40,26 @@ serve(async (req) => {
     const videoFile = formData.get('video') as File;
     const videoName = formData.get('videoName') as string;
     
-    if (!videoFile) {
-      throw new Error('No video file provided');
+    // Server-side validation
+    if (!videoFile || !(videoFile instanceof File)) {
+      throw new Error('Invalid file upload');
+    }
+
+    // Validate file size (100MB limit)
+    if (videoFile.size > 100 * 1024 * 1024) {
+      throw new Error('File size exceeds 100MB limit');
+    }
+
+    // Validate MIME type
+    const allowedTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/quicktime', 'video/x-msvideo'];
+    if (!allowedTypes.includes(videoFile.type)) {
+      throw new Error('Invalid file type. Only MP4, AVI, and MOV are allowed');
+    }
+
+    // Sanitize filename
+    const sanitizedName = videoName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 255);
+    if (!sanitizedName) {
+      throw new Error('Invalid filename');
     }
 
     console.log(`Processing video: ${videoName}`);
@@ -49,9 +67,9 @@ serve(async (req) => {
     // Convert video to array buffer
     const videoBuffer = await videoFile.arrayBuffer();
     
-    // Upload video to storage
+    // Upload video to storage with sanitized filename
     const timestamp = Date.now();
-    const videoPath = `${timestamp}_${videoName}`;
+    const videoPath = `${timestamp}_${sanitizedName}`;
     
     const { error: uploadError } = await supabase.storage
       .from('videos')
