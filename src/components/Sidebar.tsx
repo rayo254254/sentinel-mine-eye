@@ -1,6 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Home, Video, FileText, Settings, ShieldAlert } from "lucide-react";
+import { Home, Video, FileText, Settings, ShieldAlert, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Sidebar = () => {
   const location = useLocation();
@@ -11,6 +14,15 @@ const Sidebar = () => {
     { to: "/logs", label: "Violation Logs", icon: FileText },
     { to: "/models", label: "Model Management", icon: Settings },
   ];
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Failed to log out");
+    } else {
+      toast.success("Logged out successfully");
+    }
+  };
 
   return (
     <div className="flex h-screen w-64 flex-col border-r border-border bg-card">
@@ -42,12 +54,14 @@ const Sidebar = () => {
         })}
       </nav>
       <div className="border-t border-border p-4">
-        <div className="rounded-lg bg-secondary p-3 text-xs">
-          <p className="font-medium mb-1">Backend Integration</p>
-          <p className="text-muted-foreground">
-            Connect to Flask API at <code className="text-primary">localhost:5000</code>
-          </p>
-        </div>
+        <Button 
+          variant="outline" 
+          className="w-full justify-start gap-3" 
+          onClick={handleLogout}
+        >
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Button>
       </div>
     </div>
   );
