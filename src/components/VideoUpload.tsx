@@ -18,12 +18,13 @@ const VideoUpload = () => {
 
   useEffect(() => {
     const loadVideo = async () => {
-      if (videoPath) {
+      if (videoPath && videoPath !== "null" && videoPath !== "undefined") {
         const { data } = supabase.storage
           .from('videos')
           .getPublicUrl(videoPath);
-        
         setVideoUrl(data.publicUrl);
+      } else {
+        setVideoUrl("");
       }
     };
     
@@ -97,7 +98,7 @@ const VideoUpload = () => {
         </p>
       </div>
 
-      {videoPath && videoUrl && (
+      {videoUrl && (
         <Card className="shadow-card border-border">
           <CardHeader>
             <CardTitle>Video Player</CardTitle>
