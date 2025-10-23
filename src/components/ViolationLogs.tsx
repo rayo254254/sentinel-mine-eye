@@ -72,10 +72,13 @@ const ViolationLogs = () => {
   }, [logs]);
 
   const formatVideoTimestamp = (frameNumber: number, fps: number = 30) => {
-    const seconds = Math.floor(frameNumber / fps);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    const totalSeconds = frameNumber / fps;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    const centiseconds = Math.round((totalSeconds - Math.floor(totalSeconds)) * 100);
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   const handleTimestampClick = (frame: number, videoPath: string) => {
