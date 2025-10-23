@@ -126,6 +126,19 @@ serve(async (req) => {
       'phone usage'
     ];
     
+    // Parse optional sampled frames sent from client for visual analysis
+    const framesMetaStr = formData.get('frames_meta') as string | null;
+    let frameTimes: number[] = [];
+    if (framesMetaStr) {
+      try { frameTimes = JSON.parse(framesMetaStr); } catch { console.warn('Invalid frames_meta JSON'); }
+    }
+    const frameFiles: File[] = [];
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === 'object' && value instanceof File && key.startsWith('frame_')) {
+        frameFiles.push(value as File);
+      }
+    }
+    
     const violations = [];
     const detectedFrames = new Set(); // Track frames to avoid duplicates
     
@@ -168,8 +181,104 @@ serve(async (req) => {
       console.log(`Created ${framesToCreate.length} violation records from filename data`);
     }
     
-    // PHASE 2: AI-Powered Detection (only if no filename info or as supplementary)
-    else if (lovableApiKey) {
+    // PHASE 2: AI-Powered Detection
+    if (lovableApiKey && frameFiles.length > 0) {
+      console.log('Using AI with sampled video frames');
+      let contextPrompt = trainingContext || '';
+      if (filenameViolationHint) {
+        contextPrompt += `\n\nContext: Possible "${filenameViolationHint}" based on filename. Verify visually.`;
+      }
+
+      for (let i = 0; i < frameFiles.length; i++) {
+        const file = frameFiles[i];
+        const buf = await file.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const timeSec = typeof frameTimes[i] === 'number' ? frameTimes[i] : (i + 1) * 2;
+        const frameNumber = Math.max(0, Math.round(timeSec * VIDEO_FPS));
+
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'text', text: `You are an AI safety inspector analyzing a frame from a mining operations video.\n\n${contextPrompt}\n\nDetect if this specific frame (approx t=${timeSec.toFixed(2)}s) contains a serious safety violation. Focus on clear, visible hazards:\n\n1. Hand in Rotating Mechanism\n2. Too Close to Machinery\n3. Restricted Zone Entry\n4. Equipment Failure\n5. Collision Risk\n6. Unsafe Procedure\n\nOnly report if you are confident (>0.6).` },
+                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } }
+              ]
+            }],
+            tools: [{
+              type: "function",
+              function: {
+                name: "report_violation",
+                description: "Report a detected safety violation",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    has_violation: { type: "boolean" },
+                    violation_type: {
+                      type: "string",
+                      enum: [
+                        "Hand in Rotating Mechanism",
+                        "Too Close to Machinery",
+                        "Restricted Zone Entry",
+                        "Equipment Failure",
+                        "Collision Risk",
+                        "Unsafe Procedure"
+                      ]
+                    },
+                    confidence: { type: "number" },
+                    severity: { type: "string", enum: ["critical", "warning"] }
+                  },
+                  required: ["has_violation", "violation_type", "confidence", "severity"]
+                }
+              }
+            }],
+            tool_choice: { type: "function", function: { name: "report_violation" } }
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiResult = await aiResponse.json();
+          const toolCall = aiResult.choices[0]?.message?.tool_calls?.[0];
+          if (toolCall) {
+            try {
+              const detection = JSON.parse(toolCall.function.arguments);
+              if (detection.has_violation && detection.confidence > 0.6) {
+                const frameTimeSeconds = frameNumber / VIDEO_FPS;
+                const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
+                const violation = {
+                  violation_type: detection.violation_type,
+                  confidence: detection.confidence.toFixed(3),
+                  source_type: 'video',
+                  source_name: videoName,
+                  video_path: videoPath,
+                  frame_number: frameNumber,
+                  detected_at: violationTimestamp.toISOString(),
+                  metadata: {
+                    severity: detection.severity,
+                    detection_method: 'ai_frame',
+                    video_fps: VIDEO_FPS,
+                    training_datasets: trainingDatasets?.length || 0
+                  }
+                };
+                violations.push(violation);
+                await supabase.from('violations').insert(violation);
+              }
+            } catch (e) {
+              console.error('Error parsing AI tool call for frame:', i, e);
+            }
+          }
+        }
+
+        // Small delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 400));
+      }
+    } else if (lovableApiKey) {
       console.log('Using AI-powered safety violation detection');
       
       // Analyze 5-8 frames across the video for thorough detection
@@ -200,29 +309,7 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [{
               role: 'user',
-              content: `You are an AI safety inspector analyzing mining operation videos for safety violations.
-
-VIDEO ANALYSIS TASK:
-Analyze this mining safety video and identify actual safety violations based on typical mining operation hazards.
-
-${contextPrompt}
-
-CRITICAL SAFETY VIOLATIONS TO DETECT:
-1. **Hand in Rotating Mechanism**: Worker's hand, arm, or body part dangerously close to or inside rotating machinery, gears, pulleys, or moving parts
-2. **Too Close to Machinery**: Person within unsafe proximity (< 2 meters) to moving/operating heavy equipment or machinery
-3. **Restricted Zone Entry**: Unauthorized entry into dangerous zones marked as restricted, high-risk areas, or active machinery zones
-4. **Equipment Failure**: Visible equipment malfunction, oil cap burst, hydraulic failure, cable breakage, or machinery operating abnormally
-5. **Collision Risk**: Person or object in the path of moving equipment, vehicles, or machinery
-6. **Unsafe Procedure**: Worker performing operation without following safety protocols (e.g., hitting machinery with objects, improper tool use)
-
-IMPORTANT GUIDELINES:
-- Look for actual dangerous situations, not just minor infractions
-- Consider the specific context: ${filenameViolationHint || 'general mining operations'}
-- Only report violations you are confident about (confidence > 0.7)
-- Prioritize severe hazards that could cause injury
-- Be realistic - mining operations have inherent risks; focus on preventable dangers
-
-Based on typical patterns in mining operations at frame ${frameNumber} of this video, determine if a serious safety violation is likely present.`
+              content: `You are an AI safety inspector analyzing mining operation videos for safety violations.\n\nVIDEO ANALYSIS TASK:\nAnalyze this mining safety video and identify actual safety violations based on typical mining operation hazards.\n\n${contextPrompt}\n\nCRITICAL SAFETY VIOLATIONS TO DETECT:\n1. **Hand in Rotating Mechanism**: Worker's hand, arm, or body part dangerously close to or inside rotating machinery, gears, pulleys, or moving parts\n2. **Too Close to Machinery**: Person within unsafe proximity (< 2 meters) to moving/operating heavy equipment or machinery\n3. **Restricted Zone Entry**: Unauthorized entry into dangerous zones marked as restricted, high-risk areas, or active machinery zones\n4. **Equipment Failure**: Visible equipment malfunction, oil cap burst, hydraulic failure, cable breakage, or machinery operating abnormally\n5. **Collision Risk**: Person or object in the path of moving equipment, vehicles, or machinery\n6. **Unsafe Procedure**: Worker performing operation without following safety protocols (e.g., hitting machinery with objects, improper tool use)\n\nIMPORTANT GUIDELINES:\n- Look for actual dangerous situations, not just minor infractions\n- Consider the specific context: ${filenameViolationHint || 'general mining operations'}\n- Only report violations you are confident about (confidence > 0.7)\n- Prioritize severe hazards that could cause injury\n- Be realistic - mining operations have inherent risks; focus on preventable dangers\n\nBased on typical patterns in mining operations at frame ${frameNumber} of this video, determine if a serious safety violation is likely present.`
             }],
             tools: [{
               type: "function",
@@ -232,13 +319,9 @@ Based on typical patterns in mining operations at frame ${frameNumber} of this v
                 parameters: {
                   type: "object",
                   properties: {
-                    has_violation: {
-                      type: "boolean",
-                      description: "Whether a violation was detected"
-                    },
+                    has_violation: { type: "boolean" },
                     violation_type: {
                       type: "string",
-                      description: "Type of violation detected",
                       enum: [
                         "Hand in Rotating Mechanism",
                         "Too Close to Machinery",
@@ -248,14 +331,8 @@ Based on typical patterns in mining operations at frame ${frameNumber} of this v
                         "Unsafe Procedure"
                       ]
                     },
-                    confidence: {
-                      type: "number",
-                      description: "Confidence score 0-1"
-                    },
-                    severity: {
-                      type: "string",
-                      enum: ["critical", "warning"]
-                    }
+                    confidence: { type: "number" },
+                    severity: { type: "string", enum: ["critical", "warning"] }
                   },
                   required: ["has_violation", "violation_type", "confidence", "severity"]
                 }
