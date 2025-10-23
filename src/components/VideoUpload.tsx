@@ -32,26 +32,39 @@ const VideoUpload = () => {
   }, [videoPath]);
 
   useEffect(() => {
-    if (videoRef.current && frameNumber && videoUrl) {
-      // Wait for video to be ready before seeking
-      const seekToFrame = () => {
-        if (videoRef.current) {
-          const timeInSeconds = parseInt(frameNumber) / 30;
-          videoRef.current.currentTime = timeInSeconds;
-          // Pause at the violation frame
-          videoRef.current.pause();
-          toast.info(`Showing violation at ${(timeInSeconds).toFixed(2)}s`);
-        }
-      };
-      
-      // If metadata is already loaded, seek immediately
-      if (videoRef.current.readyState >= 2) {
-        seekToFrame();
-      } else {
-        // Otherwise wait for metadata to load
-        videoRef.current.addEventListener('loadedmetadata', seekToFrame, { once: true });
+    if (!(videoRef.current && frameNumber && videoUrl)) return;
+    const video = videoRef.current;
+    const timeInSeconds = parseInt(frameNumber) / 30;
+
+    const doSeek = () => {
+      if (!video) return;
+      try {
+        // Pause before and after seeking to prevent auto-play drifting
+        video.pause();
+        const onSeeked = () => {
+          video.pause();
+          toast.info(`Showing violation at ${timeInSeconds.toFixed(2)}s`);
+          video.removeEventListener('seeked', onSeeked);
+        };
+        video.addEventListener('seeked', onSeeked);
+        video.currentTime = timeInSeconds;
+      } catch (e) {
+        // no-op
       }
+    };
+
+    if (video.readyState >= 2) {
+      doSeek();
+    } else {
+      video.addEventListener('loadedmetadata', doSeek, { once: true });
+      video.addEventListener('canplay', doSeek, { once: true });
     }
+
+    return () => {
+      // Clean up any pending listeners to avoid duplicate seeks
+      video.removeEventListener('loadedmetadata', doSeek as any);
+      video.removeEventListener('canplay', doSeek as any);
+    };
   }, [frameNumber, videoUrl]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,8 +142,11 @@ const VideoUpload = () => {
           </CardHeader>
           <CardContent>
             <video 
+              key={videoPath || videoUrl}
               ref={videoRef}
               controls 
+              preload="auto"
+              playsInline
               className="w-full rounded-lg"
               src={videoUrl}
             >
