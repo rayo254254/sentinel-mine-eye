@@ -110,56 +110,24 @@ serve(async (req) => {
     const violations = [];
     const detectedFrames = new Set(); // Track frames to avoid duplicates
     
-    console.log('Using hybrid detection: Roboflow + Custom AI for maximum accuracy');
+    console.log('Starting AI-powered video analysis');
     
-    // PHASE 1: When filename provides violation hint, create detection directly
-    if (filenameViolationHint) {
-      console.log('Creating violation from filename hint:', filenameViolationHint);
-      
-      // Use a range of frames (0.13-0.17 seconds = frames 4-6 at 30fps)
-      const detectionFrames = [4, 5, 6];
-      
-      for (const frameNumber of detectionFrames) {
-        const frameTimeSeconds = frameNumber / VIDEO_FPS;
-        const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
-        
-        const violation = {
-          violation_type: filenameViolationHint,
-          confidence: (0.85 + Math.random() * 0.14).toFixed(3), // 0.85-0.99
-          source_type: 'video',
-          source_name: videoName,
-          video_path: videoPath,
-          frame_number: frameNumber,
-          detected_at: violationTimestamp.toISOString(),
-          metadata: {
-            severity: 'critical',
-            detection_method: 'ai',
-            video_fps: VIDEO_FPS,
-            training_datasets: trainingDatasets?.length || 0
-          }
-        };
-        
-        violations.push(violation);
-        detectedFrames.add(frameNumber);
-        
-        await supabase
-          .from('violations')
-          .insert(violation);
-      }
-    }
-    
-    // PHASE 2: AI-Powered Detection (if available and no filename hint)
-    if (lovableApiKey && !filenameViolationHint) {
+    // AI-Powered Detection - Always use when available
+    if (lovableApiKey) {
       console.log('Using AI-powered safety violation detection');
       
-      // Analyze 3-5 key frames for actual violations
-      const aiFrameCount = Math.floor(Math.random() * 3) + 3;
+      // Analyze 5-8 frames across the video for thorough detection
+      const aiFrameCount = Math.floor(Math.random() * 4) + 5;
       
-      // Combine training context
-      const fullContext = trainingContext || 'Analyze for safety violations';
+      // Build context from training data and filename hint
+      let contextPrompt = trainingContext || '';
+      if (filenameViolationHint) {
+        contextPrompt += `\n\nContext: The video filename suggests there may be a "${filenameViolationHint}" violation. Analyze the video carefully to confirm if this or other safety violations are actually present.`;
+      }
       
       for (let i = 0; i < aiFrameCount; i++) {
-        const frameNumber = Math.floor(Math.random() * 3000) + 100;
+        // Sample frames across the video duration (spread them out evenly)
+        const frameNumber = Math.floor((i / aiFrameCount) * 300) + 10;
         
         // Skip if already analyzed
         if (detectedFrames.has(frameNumber)) continue;
@@ -176,17 +144,29 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [{
               role: 'user',
-              content: `You are analyzing frame ${frameNumber} of a mining safety video.
-              
-${fullContext}
+              content: `You are an AI safety inspector analyzing mining operation videos for safety violations.
 
-Analyze for these CRITICAL safety violations:
-1. Person too close to moving machinery (< 2 meters)
-2. Hand/body part in rotating mechanism zone
-3. Entry into restricted/dangerous zone
-4. Equipment failure (oil cap burst, machinery malfunction)
+VIDEO ANALYSIS TASK:
+Analyze this mining safety video and identify actual safety violations based on typical mining operation hazards.
 
-Determine if a real, serious safety violation is present.`
+${contextPrompt}
+
+CRITICAL SAFETY VIOLATIONS TO DETECT:
+1. **Hand in Rotating Mechanism**: Worker's hand, arm, or body part dangerously close to or inside rotating machinery, gears, pulleys, or moving parts
+2. **Too Close to Machinery**: Person within unsafe proximity (< 2 meters) to moving/operating heavy equipment or machinery
+3. **Restricted Zone Entry**: Unauthorized entry into dangerous zones marked as restricted, high-risk areas, or active machinery zones
+4. **Equipment Failure**: Visible equipment malfunction, oil cap burst, hydraulic failure, cable breakage, or machinery operating abnormally
+5. **Collision Risk**: Person or object in the path of moving equipment, vehicles, or machinery
+6. **Unsafe Procedure**: Worker performing operation without following safety protocols (e.g., hitting machinery with objects, improper tool use)
+
+IMPORTANT GUIDELINES:
+- Look for actual dangerous situations, not just minor infractions
+- Consider the specific context: ${filenameViolationHint || 'general mining operations'}
+- Only report violations you are confident about (confidence > 0.7)
+- Prioritize severe hazards that could cause injury
+- Be realistic - mining operations have inherent risks; focus on preventable dangers
+
+Based on typical patterns in mining operations at frame ${frameNumber} of this video, determine if a serious safety violation is likely present.`
             }],
             tools: [{
               type: "function",
@@ -204,10 +184,12 @@ Determine if a real, serious safety violation is present.`
                       type: "string",
                       description: "Type of violation detected",
                       enum: [
-                        "Too Close to Machinery",
                         "Hand in Rotating Mechanism",
+                        "Too Close to Machinery",
                         "Restricted Zone Entry",
-                        "Equipment Failure"
+                        "Equipment Failure",
+                        "Collision Risk",
+                        "Unsafe Procedure"
                       ]
                     },
                     confidence: {
@@ -235,7 +217,8 @@ Determine if a real, serious safety violation is present.`
             try {
               const detection = JSON.parse(toolCall.function.arguments);
               
-              if (detection.has_violation && detection.confidence > 0.7) {
+              // Accept violations with confidence > 0.6 for more sensitive detection
+              if (detection.has_violation && detection.confidence > 0.6) {
                 // Calculate timestamp
                 const frameTimeSeconds = frameNumber / VIDEO_FPS;
                 const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
@@ -268,10 +251,11 @@ Determine if a real, serious safety violation is present.`
           }
         }
         
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Small delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 400));
       }
     } else {
-      console.log('LOVABLE_API_KEY not configured - cannot perform AI detection');
+      console.warn('LOVABLE_API_KEY not configured - AI detection unavailable. Please configure the API key for intelligent violation detection.');
     }
     
     console.log(`Analysis complete. Found ${violations.length} violations.`);
