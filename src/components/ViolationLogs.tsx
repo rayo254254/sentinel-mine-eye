@@ -71,6 +71,13 @@ const ViolationLogs = () => {
     }));
   }, [logs]);
 
+  const formatVideoTimestamp = (frameNumber: number, fps: number = 30) => {
+    const seconds = Math.floor(frameNumber / fps);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
   const handleTimestampClick = (frame: number, videoPath: string) => {
     navigate(`/upload?video=${encodeURIComponent(videoPath)}&frame=${frame}`);
   };
@@ -135,12 +142,13 @@ const ViolationLogs = () => {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Timestamp</TableHead>
+                            <TableHead>Video Time</TableHead>
                             <TableHead>Violation Type</TableHead>
                             <TableHead>Zone</TableHead>
                             <TableHead>Confidence</TableHead>
                             <TableHead>Frame</TableHead>
                             <TableHead>Severity</TableHead>
+                            <TableHead>Method</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -153,11 +161,25 @@ const ViolationLogs = () => {
                                     className="flex items-center gap-2 text-primary hover:underline cursor-pointer group"
                                   >
                                     <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    {new Date(log.detected_at).toLocaleString()}
+                                    <div className="flex flex-col items-start">
+                                      <span className="font-semibold">
+                                        {formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30)}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {new Date(log.detected_at).toLocaleDateString()}
+                                      </span>
+                                    </div>
                                   </button>
                                 ) : (
                                   <div className="flex items-center gap-2 text-muted-foreground">
-                                    {new Date(log.detected_at).toLocaleString()}
+                                    <div className="flex flex-col items-start">
+                                      <span className="font-semibold">
+                                        {formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30)}
+                                      </span>
+                                      <span className="text-xs">
+                                        {new Date(log.detected_at).toLocaleDateString()}
+                                      </span>
+                                    </div>
                                     <Badge variant="outline">no video</Badge>
                                   </div>
                                 )}
@@ -178,6 +200,19 @@ const ViolationLogs = () => {
                               <TableCell>
                                 <Badge variant={log.metadata?.severity === "critical" ? "destructive" : "secondary"}>
                                   {log.metadata?.severity || 'unknown'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">
+                                  {log.metadata?.detection_method === 'custom_ai' ? (
+                                    <span className="flex items-center gap-1">
+                                      🤖 AI
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1">
+                                      🎯 Roboflow
+                                    </span>
+                                  )}
                                 </Badge>
                               </TableCell>
                             </TableRow>

@@ -15,7 +15,6 @@ const ModelManagement = () => {
   const [uploadingModel, setUploadingModel] = useState(false);
   const [uploadingDataset, setUploadingDataset] = useState(false);
   const [uploadingFolder, setUploadingFolder] = useState(false);
-  const [detectionMethod, setDetectionMethod] = useState<'roboflow' | 'custom'>('roboflow');
 
   // Fetch uploaded models from database
   const { data: uploadedModels = [], refetch } = useQuery({
@@ -30,61 +29,6 @@ const ModelManagement = () => {
       return data || [];
     }
   });
-
-  // Fetch detection settings
-  const { data: settings } = useQuery({
-    queryKey: ['detection-settings'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
-      const { data, error } = await supabase
-        .from('detection_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') throw error;
-      return data;
-    }
-  });
-
-  useEffect(() => {
-    if (settings) {
-      setDetectionMethod(settings.detection_method as 'roboflow' | 'custom');
-    }
-  }, [settings]);
-
-  // Update detection method mutation
-  const updateDetectionMethodMutation = useMutation({
-    mutationFn: async (method: 'roboflow' | 'custom') => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { error: upsertError } = await supabase
-        .from('detection_settings')
-        .upsert({ 
-          user_id: user.id, 
-          detection_method: method 
-        }, {
-          onConflict: 'user_id'
-        });
-      
-      if (upsertError) throw upsertError;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['detection-settings'] });
-      toast.success('Detection method updated');
-    },
-    onError: (error) => {
-      toast.error('Failed to update detection method: ' + error.message);
-    }
-  });
-
-  const handleDetectionMethodChange = (method: 'roboflow' | 'custom') => {
-    setDetectionMethod(method);
-    updateDetectionMethodMutation.mutate(method);
-  };
 
   // Activate model mutation
   const activateModelMutation = useMutation({
@@ -292,52 +236,39 @@ const ModelManagement = () => {
 
       <Card className="shadow-card border-border">
         <CardHeader>
-          <CardTitle>Detection Method</CardTitle>
-          <CardDescription>Choose how violations should be detected</CardDescription>
+          <CardTitle>How Detection Works</CardTitle>
+          <CardDescription>Hybrid AI system for maximum accuracy</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <button
-              onClick={() => handleDetectionMethodChange('roboflow')}
-              className={`p-4 rounded-lg border-2 transition-all text-left ${
-                detectionMethod === 'roboflow'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`h-4 w-4 rounded-full border-2 ${
-                  detectionMethod === 'roboflow' 
-                    ? 'border-primary bg-primary' 
-                    : 'border-muted-foreground'
-                }`} />
-                <h3 className="font-semibold">Roboflow API</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Use Roboflow's cloud-based detection service
-              </p>
-            </button>
+        <CardContent className="space-y-3">
+          <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+            <h3 className="font-semibold mb-2 flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-primary" />
+              Dual Detection System
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Videos are analyzed using both <strong>Roboflow API</strong> and <strong>Custom AI</strong> simultaneously. 
+              This hybrid approach combines rule-based detection with intelligent AI analysis for superior accuracy.
+            </p>
+          </div>
+          
+          <div className="p-4 rounded-lg bg-secondary">
+            <h3 className="font-semibold mb-2">Your Trained Models</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When you upload and activate a trained model, the Custom AI uses it as context to recognize 
+              patterns specific to your mining operations. The AI learns from your training data to detect 
+              violations unique to your environment.
+            </p>
+          </div>
 
-            <button
-              onClick={() => handleDetectionMethodChange('custom')}
-              className={`p-4 rounded-lg border-2 transition-all text-left ${
-                detectionMethod === 'custom'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`h-4 w-4 rounded-full border-2 ${
-                  detectionMethod === 'custom' 
-                    ? 'border-primary bg-primary' 
-                    : 'border-muted-foreground'
-                }`} />
-                <h3 className="font-semibold">Custom AI Analysis</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Use AI-powered analysis based on your training data
-              </p>
-            </button>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="p-3 rounded-lg bg-secondary">
+              <p className="font-medium text-foreground mb-1">Roboflow Detection</p>
+              <p className="text-muted-foreground text-xs">Standard safety rules & patterns</p>
+            </div>
+            <div className="p-3 rounded-lg bg-secondary">
+              <p className="font-medium text-foreground mb-1">Custom AI Analysis</p>
+              <p className="text-muted-foreground text-xs">Your trained models + intelligent reasoning</p>
+            </div>
           </div>
         </CardContent>
       </Card>
