@@ -46,7 +46,7 @@ serve(async (req) => {
       throw new Error('Invalid filename');
     }
 
-    console.log(`Processing video: ${videoName}`);
+    console.log(`Processing video: ${videoName} (${(videoFile.size / (1024 * 1024)).toFixed(2)} MB)`);
     
     // Parse filename for violation context (format: "violation_type at HH_MM_SS.mp4")
     // Used as hint for AI but not displayed to user
@@ -58,16 +58,14 @@ serve(async (req) => {
       console.log('Using filename as violation detection hint:', filenameViolationHint);
     }
     
-    // Convert video to array buffer
-    const videoBuffer = await videoFile.arrayBuffer();
-    
-    // Upload video to storage with sanitized filename
+    // Upload video to storage with sanitized filename (stream directly without loading into memory)
     const timestamp = Date.now();
     const videoPath = `${timestamp}_${sanitizedName}`;
     
+    console.log('Uploading video to storage...');
     const { error: uploadError } = await supabase.storage
       .from('videos')
-      .upload(videoPath, videoBuffer, {
+      .upload(videoPath, videoFile, {
         contentType: videoFile.type,
         upsert: false
       });
