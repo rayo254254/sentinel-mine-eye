@@ -32,11 +32,25 @@ const VideoUpload = () => {
   }, [videoPath]);
 
   useEffect(() => {
-    if (videoRef.current && frameNumber) {
-      // Assuming 30 fps, convert frame to seconds
-      const timeInSeconds = parseInt(frameNumber) / 30;
-      videoRef.current.currentTime = timeInSeconds;
-      toast.info(`Jumped to violation at frame ${frameNumber}`);
+    if (videoRef.current && frameNumber && videoUrl) {
+      // Wait for video to be ready before seeking
+      const seekToFrame = () => {
+        if (videoRef.current) {
+          const timeInSeconds = parseInt(frameNumber) / 30;
+          videoRef.current.currentTime = timeInSeconds;
+          // Pause at the violation frame
+          videoRef.current.pause();
+          toast.info(`Showing violation at ${(timeInSeconds).toFixed(2)}s`);
+        }
+      };
+      
+      // If metadata is already loaded, seek immediately
+      if (videoRef.current.readyState >= 2) {
+        seekToFrame();
+      } else {
+        // Otherwise wait for metadata to load
+        videoRef.current.addEventListener('loadedmetadata', seekToFrame, { once: true });
+      }
     }
   }, [frameNumber, videoUrl]);
 
@@ -119,12 +133,6 @@ const VideoUpload = () => {
               controls 
               className="w-full rounded-lg"
               src={videoUrl}
-              onLoadedMetadata={() => {
-                if (videoRef.current && frameNumber) {
-                  const timeInSeconds = parseInt(frameNumber) / 30;
-                  videoRef.current.currentTime = timeInSeconds;
-                }
-              }}
             >
               Your browser does not support the video tag.
             </video>
