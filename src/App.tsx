@@ -69,7 +69,7 @@ const App = () => {
                 </div>
                 <div className="p-8">
                   <Routes>
-                    <Route path="/" element={<Index />} />
+                    <Route path="/" element={<Logs />} />
                     <Route path="/upload" element={<Upload />} />
                     <Route path="/logs" element={<Logs />} />
                     <Route path="/models" element={<Models />} />

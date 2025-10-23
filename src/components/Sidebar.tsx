@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Home, Video, FileText, Settings, ShieldAlert, LogOut } from "lucide-react";
+import { Video, FileText, Settings, ShieldAlert, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -9,7 +9,6 @@ const Sidebar = () => {
   const location = useLocation();
 
   const links = [
-    { to: "/", label: "Dashboard", icon: Home },
     { to: "/upload", label: "Video Analysis", icon: Video },
     { to: "/logs", label: "Violation Logs", icon: FileText },
     { to: "/models", label: "Model Management", icon: Settings },
