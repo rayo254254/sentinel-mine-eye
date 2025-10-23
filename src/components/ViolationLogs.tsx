@@ -83,8 +83,8 @@ const ViolationLogs = () => {
   };
 
   const handleExport = () => {
-    const csv = "timestamp,violation,confidence,frame,severity\n" + 
-      logs.map(log => `${log.detected_at},${log.violation_type},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.frame_number},${log.metadata?.severity || 'N/A'}`).join("\n");
+    const csv = "video_name,timestamp,violation,confidence,severity\n" + 
+      logs.map(log => `"${log.source_name}",${log.detected_at},${log.violation_type},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.metadata?.severity || 'N/A'}`).join("\n");
     
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -159,17 +159,27 @@ const ViolationLogs = () => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>Video Name</TableHead>
                             <TableHead>Video Time</TableHead>
                             <TableHead>Violation Type</TableHead>
                             <TableHead>Confidence</TableHead>
-                            <TableHead>Frame</TableHead>
                             <TableHead>Severity</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {group.items.map((log: any) => (
+                          {group.items.map((log: any) => {
+                            // Extract filename info if available
+                            const filenameInfo = log.metadata?.filename_info;
+                            const displayTime = filenameInfo?.timestamp 
+                              ? filenameInfo.timestamp.replace(/_/g, ':')
+                              : formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30);
+                            
+                            return (
                             <TableRow key={log.id}>
+                              <TableCell className="font-medium text-sm max-w-xs truncate" title={log.source_name}>
+                                {log.source_name}
+                              </TableCell>
                               <TableCell className="font-mono text-sm">
                                 {log.video_path ? (
                                   <button
@@ -179,7 +189,7 @@ const ViolationLogs = () => {
                                     <Play className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                                     <div className="flex flex-col items-start">
                                       <span className="font-semibold">
-                                        {formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30)}
+                                        {displayTime}
                                       </span>
                                       <span className="text-xs text-muted-foreground">
                                         {new Date(log.detected_at).toLocaleDateString()}
@@ -190,7 +200,7 @@ const ViolationLogs = () => {
                                   <div className="flex items-center gap-2 text-muted-foreground">
                                     <div className="flex flex-col items-start">
                                       <span className="font-semibold">
-                                        {formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30)}
+                                        {displayTime}
                                       </span>
                                       <span className="text-xs">
                                         {new Date(log.detected_at).toLocaleDateString()}
@@ -207,11 +217,15 @@ const ViolationLogs = () => {
                                 >
                                   {log.violation_type}
                                 </Badge>
+                                {filenameInfo && (
+                                  <Badge variant="secondary" className="ml-2 text-xs">
+                                    from filename
+                                  </Badge>
+                                )}
                               </TableCell>
                               <TableCell className="text-primary font-medium">
                                 {(parseFloat(log.confidence) * 100).toFixed(1)}%
                               </TableCell>
-                              <TableCell className="font-mono text-sm">#{log.frame_number}</TableCell>
                               <TableCell>
                                 <Badge variant={log.metadata?.severity === "critical" ? "destructive" : "secondary"}>
                                   {log.metadata?.severity || 'unknown'}
@@ -228,7 +242,7 @@ const ViolationLogs = () => {
                                 </Button>
                               </TableCell>
                             </TableRow>
-                          ))}
+                          )})}
                         </TableBody>
                       </Table>
                     </div>
