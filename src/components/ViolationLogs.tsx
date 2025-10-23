@@ -169,11 +169,7 @@ const ViolationLogs = () => {
                         </TableHeader>
                         <TableBody>
                           {group.items.map((log: any) => {
-                            // Extract filename info if available
-                            const filenameInfo = log.metadata?.filename_info;
-                            const displayTime = filenameInfo?.timestamp 
-                              ? filenameInfo.timestamp.replace(/_/g, ':')
-                              : formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30);
+                            const displayTime = formatVideoTimestamp(log.frame_number, log.metadata?.video_fps || 30);
                             
                             return (
                             <TableRow key={log.id}>
@@ -217,11 +213,6 @@ const ViolationLogs = () => {
                                 >
                                   {log.violation_type}
                                 </Badge>
-                                {filenameInfo && (
-                                  <Badge variant="secondary" className="ml-2 text-xs">
-                                    from filename
-                                  </Badge>
-                                )}
                               </TableCell>
                               <TableCell className="text-primary font-medium">
                                 {(parseFloat(log.confidence) * 100).toFixed(1)}%

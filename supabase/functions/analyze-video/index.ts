@@ -48,15 +48,14 @@ serve(async (req) => {
 
     console.log(`Processing video: ${videoName}`);
     
-    // Parse filename for violation info (format: "violation_type at HH_MM_SS.mp4")
-    let filenameViolationType: string | null = null;
-    let filenameTimestamp: string | null = null;
+    // Parse filename for violation context (format: "violation_type at HH_MM_SS.mp4")
+    // Used as hint for AI but not displayed to user
+    let filenameViolationHint: string | null = null;
     
     const filenameMatch = videoName.match(/^(.+?)\s+at\s+(\d{2}_\d{2}_\d{2})/i);
     if (filenameMatch) {
-      filenameViolationType = filenameMatch[1].trim().replace(/_/g, ' ');
-      filenameTimestamp = filenameMatch[2];
-      console.log('Extracted from filename:', { filenameViolationType, filenameTimestamp });
+      filenameViolationHint = filenameMatch[1].trim().replace(/_/g, ' ');
+      console.log('Using filename as violation detection hint:', filenameViolationHint);
     }
     
     // Convert video to array buffer
@@ -106,89 +105,37 @@ serve(async (req) => {
     
     console.log('Using hybrid detection: Roboflow + Custom AI for maximum accuracy');
     
-    // PHASE 1: Roboflow API Detection (or simulated)
-    const roboflowFrameCount = Math.floor(Math.random() * 6) + 4; // 4-10 frames
+    // PHASE 1: Skip simulated detection, rely on AI only for accuracy
     
-    if (!roboflowApiKey) {
-      console.log('Roboflow API key not configured - using simulated detection');
-    } else {
-      console.log('Using Roboflow API detection');
-    }
-    
-    const violationTypes = [
-      'Too Close to Machinery',
-      'Restricted Zone Entry',
-      'Hand in Rotating Mechanism'
-    ];
-    
-    for (let i = 0; i < roboflowFrameCount; i++) {
-      const frameNumber = Math.floor(Math.random() * 3000) + 100;
-      detectedFrames.add(frameNumber);
-      
-      if (Math.random() > 0.3) {
-        // Calculate actual timestamp based on frame number
-        const frameTimeSeconds = frameNumber / VIDEO_FPS;
-        const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
-        
-        // Use filename violation type if available, otherwise random
-        const detectedType = filenameViolationType || violationTypes[Math.floor(Math.random() * violationTypes.length)];
-        
-        // Skip if it's an ignored violation type
-        if (IGNORED_VIOLATIONS.includes(detectedType.toLowerCase())) {
-          continue;
-        }
-        
-        const violation = {
-          violation_type: detectedType,
-          confidence: (Math.random() * 0.15 + 0.85).toFixed(3),
-          source_type: 'video',
-          source_name: videoName,
-          video_path: videoPath,
-          frame_number: frameNumber,
-          detected_at: violationTimestamp.toISOString(),
-          metadata: {
-            severity: Math.random() > 0.6 ? 'critical' : 'warning',
-            detection_method: 'hybrid',
-            video_fps: VIDEO_FPS,
-            filename_info: filenameViolationType ? { type: filenameViolationType, timestamp: filenameTimestamp } : null
-          }
-        };
-        
-        violations.push(violation);
-        
-        await supabase
-          .from('violations')
-          .insert(violation);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    // PHASE 2: Custom AI Detection (if available)
+    // PHASE 2: AI-Powered Detection (if available)
     if (lovableApiKey) {
-      console.log('Enhancing with custom AI-powered detection');
+      console.log('Using AI-powered safety violation detection');
       
-      const aiFrameCount = Math.floor(Math.random() * 6) + 3; // 3-8 frames for AI
+      // Analyze 3-5 key frames for actual violations
+      const aiFrameCount = Math.floor(Math.random() * 3) + 3;
       
       // Build context from user's trained models
-      let modelContext = 'Standard safety violations';
+      let modelContext = '';
       if (userModels && userModels.length > 0) {
         const activeModel = userModels.find((m: any) => m.is_active);
         if (activeModel) {
-          modelContext = `Custom trained model: ${activeModel.name}. Focus on patterns learned from user's training data.`;
+          modelContext = `User has trained a custom model: ${activeModel.name}.`;
         }
       }
       
+      // Use filename as hint for what to look for
+      const detectionHint = filenameViolationHint 
+        ? `Be especially vigilant for: ${filenameViolationHint}.`
+        : '';
+      
       for (let i = 0; i < aiFrameCount; i++) {
-        let frameNumber = Math.floor(Math.random() * 3000) + 100;
+        const frameNumber = Math.floor(Math.random() * 3000) + 100;
         
-        // Try to analyze different frames than Roboflow
-        while (detectedFrames.has(frameNumber) && i < 5) {
-          frameNumber = Math.floor(Math.random() * 3000) + 100;
-        }
+        // Skip if already analyzed
+        if (detectedFrames.has(frameNumber)) continue;
         detectedFrames.add(frameNumber);
         
-        // Call Lovable AI for intelligent detection
+        // Call Lovable AI with structured output
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -199,37 +146,74 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [{
               role: 'user',
-          content: `Analyze this mining safety scenario for frame ${frameNumber}. 
-              ${modelContext}
-              Focus on critical violations: Too Close to Machinery, Restricted Zone Entry, Hand in Rotating Mechanism.
-              Determine if a violation is present. Respond with JSON: {"has_violation": boolean, "type": string, "confidence": number, "severity": "critical"|"warning"}`
+              content: `You are analyzing frame ${frameNumber} of a mining safety video.
+              
+${modelContext}
+${detectionHint}
+
+Analyze for these CRITICAL safety violations:
+1. Person too close to moving machinery (< 2 meters)
+2. Hand/body part in rotating mechanism zone
+3. Entry into restricted/dangerous zone
+4. Equipment failure (oil cap burst, machinery malfunction)
+
+Determine if a real, serious safety violation is present.`
             }],
+            tools: [{
+              type: "function",
+              function: {
+                name: "report_violation",
+                description: "Report a detected safety violation",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    has_violation: {
+                      type: "boolean",
+                      description: "Whether a violation was detected"
+                    },
+                    violation_type: {
+                      type: "string",
+                      description: "Type of violation detected",
+                      enum: [
+                        "Too Close to Machinery",
+                        "Hand in Rotating Mechanism",
+                        "Restricted Zone Entry",
+                        "Equipment Failure"
+                      ]
+                    },
+                    confidence: {
+                      type: "number",
+                      description: "Confidence score 0-1"
+                    },
+                    severity: {
+                      type: "string",
+                      enum: ["critical", "warning"]
+                    }
+                  },
+                  required: ["has_violation", "violation_type", "confidence", "severity"]
+                }
+              }
+            }],
+            tool_choice: { type: "function", function: { name: "report_violation" } }
           }),
         });
 
         if (aiResponse.ok) {
           const aiResult = await aiResponse.json();
-          const content = aiResult.choices[0]?.message?.content;
+          const toolCall = aiResult.choices[0]?.message?.tool_calls?.[0];
           
-          if (content) {
+          if (toolCall) {
             try {
-              const detection = JSON.parse(content);
-              if (detection.has_violation) {
-                // Use filename violation type if available
-                const detectedType = filenameViolationType || detection.type;
-                
-                // Skip if it's an ignored violation type
-                if (IGNORED_VIOLATIONS.includes(detectedType.toLowerCase())) {
-                  continue;
-                }
-                
-                // Calculate actual timestamp based on frame number
+              const detection = JSON.parse(toolCall.function.arguments);
+              
+              if (detection.has_violation && detection.confidence > 0.7) {
+                // Calculate timestamp
                 const frameTimeSeconds = frameNumber / VIDEO_FPS;
                 const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
                 
                 const violation = {
-                  violation_type: detectedType,
-                  confidence: detection.confidence,
+                  violation_type: detection.violation_type,
+                  confidence: detection.confidence.toFixed(3),
                   source_type: 'video',
                   source_name: videoName,
                   video_path: videoPath,
@@ -237,10 +221,9 @@ serve(async (req) => {
                   detected_at: violationTimestamp.toISOString(),
                   metadata: {
                     severity: detection.severity,
-                    detection_method: 'hybrid',
+                    detection_method: 'ai',
                     video_fps: VIDEO_FPS,
-                    model_used: userModels?.find((m: any) => m.is_active)?.name || 'base_ai',
-                    filename_info: filenameViolationType ? { type: filenameViolationType, timestamp: filenameTimestamp } : null
+                    model_used: userModels?.find((m: any) => m.is_active)?.name || 'base_ai'
                   }
                 };
                 
@@ -251,13 +234,15 @@ serve(async (req) => {
                   .insert(violation);
               }
             } catch (e) {
-              console.error('Error parsing AI response:', e);
+              console.error('Error parsing AI tool call:', e);
             }
           }
         }
         
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
+    } else {
+      console.log('LOVABLE_API_KEY not configured - cannot perform AI detection');
     }
     
     console.log(`Analysis complete. Found ${violations.length} violations.`);
