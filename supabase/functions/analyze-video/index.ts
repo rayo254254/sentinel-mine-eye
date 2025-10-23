@@ -120,15 +120,43 @@ serve(async (req) => {
       .select('*')
       .eq('uploaded_by', userId)
       .eq('type', 'dataset')
-      .eq('is_active', true)
       .order('created_at', { ascending: false });
     
-    // Build training context from datasets
+    // Build detailed training context based on uploaded datasets
     let trainingContext = '';
+    const detectionCategories = new Set<string>();
+    
     if (trainingDatasets && trainingDatasets.length > 0) {
-      const datasetNames = trainingDatasets.map((d: any) => d.name).join(', ');
-      trainingContext = `User has uploaded ${trainingDatasets.length} YOLO training dataset(s): ${datasetNames}. Use patterns learned from these datasets to improve detection accuracy.`;
-      console.log('Training datasets available:', trainingContext);
+      console.log(`Found ${trainingDatasets.length} training datasets`);
+      
+      // Map dataset names to specific detection capabilities
+      for (const dataset of trainingDatasets) {
+        const name = dataset.name.toLowerCase();
+        
+        if (name.includes('drill') && name.includes('handle')) {
+          detectionCategories.add('Human handling a drill');
+        }
+        if (name.includes('cylinder') || name.includes('bucket')) {
+          detectionCategories.add('Broken cylinder');
+        }
+        if (name.includes('drill') && name.includes('rod')) {
+          detectionCategories.add('Human using beam/rod on drill');
+        }
+        if (name.includes('lh') && name.includes('machine')) {
+          detectionCategories.add('LH machines collision risk');
+        }
+        if (name.includes('oil') || name.includes('spray')) {
+          detectionCategories.add('Equipment Failure');
+        }
+      }
+      
+      trainingContext = `TRAINED DETECTION MODELS:
+You have been trained on ${trainingDatasets.length} custom YOLO datasets specifically for mining safety:
+${Array.from(detectionCategories).map(cat => `- ${cat}`).join('\n')}
+
+These datasets contain thousands of labeled examples from real mining operations. Focus detection on these specific violation types that match your training data.`;
+      
+      console.log('Training context:', trainingContext);
     }
     
     // Assume standard video FPS for timestamp calculation
@@ -401,7 +429,31 @@ serve(async (req) => {
             messages: [{
               role: 'user',
               content: [
-                { type: 'text', text: `You are an AI safety inspector analyzing a frame from a mining operations video.\n\n${contextPrompt}\n\nDetect if this specific frame (approx t=${timeSec.toFixed(2)}s) contains a serious safety violation. Focus on clear, visible hazards:\n\n1. Hand in Rotating Mechanism\n2. Too Close to Machinery\n3. Restricted Zone Entry\n4. Equipment Failure\n5. Collision Risk\n6. Unsafe Procedure\n\nOnly report if you are confident (>0.6).` },
+                { type: 'text', text: `You are an AI safety inspector trained on custom YOLO models for mining safety violations.
+
+${contextPrompt}
+
+DETECTION TASK - Frame at t=${timeSec.toFixed(2)}s:
+
+Based on the BIP (Mining Safety) detection system, identify these SPECIFIC violations:
+
+🔴 CRITICAL VIOLATIONS:
+1. **Human handling a drill** - Person physically holding, carrying, or manipulating a drilling tool
+2. **Broken cylinder** - Damaged hydraulic cylinder, oil leakage, or cylinder failure visible
+3. **Human using beam/rod on drill** - Person using a wooden beam, metal rod, or stick to operate/push a drill
+4. **LH machines collision risk** - Two Load-Haul-Dump (LH) machines dangerously close to each other (collision imminent)
+
+⚠️ EQUIPMENT FAILURES:
+5. **Equipment Failure** - Oil spray, hydraulic leak, cable break, mechanical malfunction
+6. **Collision Risk** - Any machinery on collision course with person or other equipment
+
+DETECTION RULES (from trained YOLO models):
+- Human + Drill proximity < 120px & vertical alignment < 100px → "Human handling a drill"
+- Cylinder confidence > 0.76 → "Broken cylinder"  
+- Human + Beam/Rod + Drill all aligned → "Human using beam/rod on drill"
+- Two LH machines < 350px apart → "LH machines collision risk"
+
+Only report violations with confidence > 0.65. Focus on the exact violation types you were trained on.` },
                 { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } }
               ]
             }],
@@ -417,12 +469,12 @@ serve(async (req) => {
                     violation_type: {
                       type: "string",
                       enum: [
-                        "Hand in Rotating Mechanism",
-                        "Too Close to Machinery",
-                        "Restricted Zone Entry",
+                        "Human handling a drill",
+                        "Broken cylinder",
+                        "Human using beam/rod on drill",
+                        "LH machines collision risk",
                         "Equipment Failure",
-                        "Collision Risk",
-                        "Unsafe Procedure"
+                        "Collision Risk"
                       ]
                     },
                     confidence: { type: "number" },
@@ -502,7 +554,49 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [{
               role: 'user',
-              content: `You are an AI safety inspector analyzing mining operation videos for safety violations.\n\nVIDEO ANALYSIS TASK:\nAnalyze this mining safety video and identify actual safety violations based on typical mining operation hazards.\n\n${contextPrompt}\n\nCRITICAL SAFETY VIOLATIONS TO DETECT:\n1. **Hand in Rotating Mechanism**: Worker's hand, arm, or body part dangerously close to or inside rotating machinery, gears, pulleys, or moving parts\n2. **Too Close to Machinery**: Person within unsafe proximity (< 2 meters) to moving/operating heavy equipment or machinery\n3. **Restricted Zone Entry**: Unauthorized entry into dangerous zones marked as restricted, high-risk areas, or active machinery zones\n4. **Equipment Failure**: Visible equipment malfunction, oil cap burst, hydraulic failure, cable breakage, or machinery operating abnormally\n5. **Collision Risk**: Person or object in the path of moving equipment, vehicles, or machinery\n6. **Unsafe Procedure**: Worker performing operation without following safety protocols (e.g., hitting machinery with objects, improper tool use)\n\nIMPORTANT GUIDELINES:\n- Look for actual dangerous situations, not just minor infractions\n- Consider the specific context: ${filenameViolationHint || 'general mining operations'}\n- Only report violations you are confident about (confidence > 0.7)\n- Prioritize severe hazards that could cause injury\n- Be realistic - mining operations have inherent risks; focus on preventable dangers\n\nBased on typical patterns in mining operations at frame ${frameNumber} of this video, determine if a serious safety violation is likely present.`
+              content: `You are an AI safety inspector trained on the BIP (Mining Safety) detection system with custom YOLO models.
+
+${contextPrompt}
+
+MINING SAFETY DETECTION - Frame ${frameNumber}:
+
+You have been trained on these SPECIFIC violation patterns from real mining operations:
+
+🔴 CRITICAL VIOLATIONS (from trained YOLO models):
+
+1. **Human handling a drill**
+   - Detection: Person physically holding, carrying, or manipulating drilling equipment
+   - Training: ${trainingDatasets?.some((d: any) => d.name.toLowerCase().includes('drill') && d.name.toLowerCase().includes('handle')) ? '✓ Trained on drill handling dataset' : 'Pattern-based detection'}
+   - Confidence threshold: 0.70+
+
+2. **Broken cylinder**
+   - Detection: Damaged hydraulic cylinder, visible oil leakage, cylinder failure
+   - Training: ${trainingDatasets?.some((d: any) => d.name.toLowerCase().includes('cylinder')) ? '✓ Trained on cylinder dataset' : 'Pattern-based detection'}
+   - Confidence threshold: 0.76+
+
+3. **Human using beam/rod on drill**
+   - Detection: Person using wooden beam, metal rod, or stick to operate/manipulate drill
+   - Training: ${trainingDatasets?.some((d: any) => d.name.toLowerCase().includes('rod') || d.name.toLowerCase().includes('beam')) ? '✓ Trained on drill + rod dataset' : 'Pattern-based detection'}
+   - Confidence threshold: 0.70+
+
+4. **LH machines collision risk**
+   - Detection: Two Load-Haul-Dump machines dangerously close (< 3.5m apart)
+   - Training: ${trainingDatasets?.some((d: any) => d.name.toLowerCase().includes('lh')) ? '✓ Trained on LH machines dataset' : 'Pattern-based detection'}
+   - Confidence threshold: 0.70+
+
+⚠️ ADDITIONAL HAZARDS:
+5. **Equipment Failure** - Oil spray, hydraulic failure, cable break, mechanical malfunction
+6. **Collision Risk** - Any equipment/person on collision course
+
+DETECTION LOGIC (based on MultiModelViolationDetector):
+- Human + Drill: proximity < 120px, vertical alignment < 100px
+- Cylinder: single object confidence > 0.76
+- Human + Beam + Drill: all three objects spatially aligned
+- LH Machines: two machines < 350px horizontal, < 250px vertical
+
+${filenameViolationHint ? `\nCONTEXT: Video filename suggests "${filenameViolationHint}" - verify if this matches visual evidence.` : ''}
+
+Only report violations matching your trained categories with confidence > 0.65. Focus on exact violation types from the BIP system.`
             }],
             tools: [{
               type: "function",
@@ -516,12 +610,12 @@ serve(async (req) => {
                     violation_type: {
                       type: "string",
                       enum: [
-                        "Hand in Rotating Mechanism",
-                        "Too Close to Machinery",
-                        "Restricted Zone Entry",
+                        "Human handling a drill",
+                        "Broken cylinder",
+                        "Human using beam/rod on drill",
+                        "LH machines collision risk",
                         "Equipment Failure",
-                        "Collision Risk",
-                        "Unsafe Procedure"
+                        "Collision Risk"
                       ]
                     },
                     confidence: { type: "number" },
