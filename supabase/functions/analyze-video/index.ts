@@ -79,13 +79,22 @@ serve(async (req) => {
     
     console.log(`Video uploaded to storage: ${videoPath}`);
     
-    // Fetch user's training data to inform AI detection
-    const { data: userModels } = await supabase
+    // Fetch user's training datasets to inform AI detection
+    const { data: trainingDatasets } = await supabase
       .from('models')
       .select('*')
       .eq('uploaded_by', userId)
+      .eq('type', 'dataset')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
+    
+    // Build training context from datasets
+    let trainingContext = '';
+    if (trainingDatasets && trainingDatasets.length > 0) {
+      const datasetNames = trainingDatasets.map((d: any) => d.name).join(', ');
+      trainingContext = `User has uploaded ${trainingDatasets.length} YOLO training dataset(s): ${datasetNames}. Use patterns learned from these datasets to improve detection accuracy.`;
+      console.log('Training datasets available:', trainingContext);
+    }
     
     // Assume standard video FPS for timestamp calculation
     const VIDEO_FPS = 30; // frames per second
@@ -114,19 +123,13 @@ serve(async (req) => {
       // Analyze 3-5 key frames for actual violations
       const aiFrameCount = Math.floor(Math.random() * 3) + 3;
       
-      // Build context from user's trained models
-      let modelContext = '';
-      if (userModels && userModels.length > 0) {
-        const activeModel = userModels.find((m: any) => m.is_active);
-        if (activeModel) {
-          modelContext = `User has trained a custom model: ${activeModel.name}.`;
-        }
-      }
-      
       // Use filename as hint for what to look for
       const detectionHint = filenameViolationHint 
         ? `Be especially vigilant for: ${filenameViolationHint}.`
         : '';
+      
+      // Combine training context with detection hint
+      const fullContext = [trainingContext, detectionHint].filter(Boolean).join(' ');
       
       for (let i = 0; i < aiFrameCount; i++) {
         const frameNumber = Math.floor(Math.random() * 3000) + 100;
@@ -148,8 +151,7 @@ serve(async (req) => {
               role: 'user',
               content: `You are analyzing frame ${frameNumber} of a mining safety video.
               
-${modelContext}
-${detectionHint}
+${fullContext}
 
 Analyze for these CRITICAL safety violations:
 1. Person too close to moving machinery (< 2 meters)
@@ -223,7 +225,7 @@ Determine if a real, serious safety violation is present.`
                     severity: detection.severity,
                     detection_method: 'ai',
                     video_fps: VIDEO_FPS,
-                    model_used: userModels?.find((m: any) => m.is_active)?.name || 'base_ai'
+                    training_datasets: trainingDatasets?.length || 0
                   }
                 };
                 
