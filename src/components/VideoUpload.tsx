@@ -43,7 +43,6 @@ const VideoUpload = () => {
         video.pause();
         const onSeeked = () => {
           video.pause();
-          toast.info(`Showing violation at ${timeInSeconds.toFixed(2)}s`);
           video.removeEventListener('seeked', onSeeked);
         };
         video.addEventListener('seeked', onSeeked);
