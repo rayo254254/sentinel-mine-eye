@@ -38,31 +38,35 @@ const VideoUpload = () => {
 
     const doSeek = () => {
       if (!video) return;
-      try {
-        // Pause before and after seeking to prevent auto-play drifting
-        video.pause();
-        const onSeeked = () => {
-          video.pause();
-          video.removeEventListener('seeked', onSeeked);
-        };
-        video.addEventListener('seeked', onSeeked);
-        video.currentTime = timeInSeconds;
-      } catch (e) {
-        // no-op
-      }
+      
+      video.pause();
+      video.currentTime = timeInSeconds;
+      
+      // Force another pause after seek completes to ensure it stays
+      const onSeeked = () => {
+        setTimeout(() => {
+          if (video) {
+            video.currentTime = timeInSeconds;
+            video.pause();
+          }
+        }, 50);
+        video.removeEventListener('seeked', onSeeked);
+      };
+      
+      video.addEventListener('seeked', onSeeked);
     };
 
-    if (video.readyState >= 2) {
-      doSeek();
+    // Wait for video to be fully ready
+    if (video.readyState >= 3) {
+      // Video is ready, seek immediately
+      setTimeout(doSeek, 100);
     } else {
-      video.addEventListener('loadedmetadata', doSeek, { once: true });
-      video.addEventListener('canplay', doSeek, { once: true });
+      // Wait for video to be ready
+      video.addEventListener('canplaythrough', doSeek, { once: true });
     }
 
     return () => {
-      // Clean up any pending listeners to avoid duplicate seeks
-      video.removeEventListener('loadedmetadata', doSeek as any);
-      video.removeEventListener('canplay', doSeek as any);
+      video.removeEventListener('canplaythrough', doSeek);
     };
   }, [frameNumber, videoUrl]);
 
