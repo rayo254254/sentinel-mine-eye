@@ -332,10 +332,10 @@ const ModelManagement = () => {
                     ? 'border-primary bg-primary' 
                     : 'border-muted-foreground'
                 }`} />
-                <h3 className="font-semibold">Custom Trained Models </h3>
+                <h3 className="font-semibold">Custom AI Analysis</h3>
               </div>
               <p className="text-sm text-muted-foreground">
-                Use AI-powered analysis based on your training data and labels
+                Use AI-powered analysis based on your training data
               </p>
             </button>
           </div>
