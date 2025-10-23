@@ -1,6 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
+// Helper function to check if two bounding boxes are close and aligned
+function boxesCloseAndAligned(
+  box1: number[], 
+  box2: number[], 
+  horizThresh: number, 
+  vertAlignThresh: number
+): boolean {
+  const [x1, y1, x2, y2] = box1;
+  const [x3, y3, x4, y4] = box2;
+  const c1x = (x1 + x2) / 2;
+  const c1y = (y1 + y2) / 2;
+  const c2x = (x3 + x4) / 2;
+  const c2y = (y3 + y4) / 2;
+  const horizDist = Math.abs(c1x - c2x);
+  const vertDist = Math.abs(c1y - c2y);
+  return horizDist < horizThresh && vertDist < vertAlignThresh;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -181,8 +199,184 @@ serve(async (req) => {
       console.log(`Created ${framesToCreate.length} violation records from filename data`);
     }
     
-    // PHASE 2: AI-Powered Detection
-    if (lovableApiKey && frameFiles.length > 0) {
+    // PHASE 2: YOLO Model Detection (Roboflow API)
+    if (roboflowApiKey && frameFiles.length > 0) {
+      console.log('Using custom YOLO models via Roboflow API');
+      
+      // Define your Roboflow model endpoints (UPDATE THESE with your actual model IDs)
+      const roboflowModels = {
+        humans: 'your-workspace/humans-model/1',  // Update with your actual model ID
+        drills: 'your-workspace/drills-model/1',
+        beams: 'your-workspace/beams-rods-model/1',
+        cylinders: 'your-workspace/cylinders-model/1',
+        machines: 'your-workspace/machines-model/1',
+        lh_machines: 'your-workspace/lh-machines-model/1'
+      };
+      
+      for (let i = 0; i < frameFiles.length; i++) {
+        const file = frameFiles[i];
+        const buf = await file.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const timeSec = typeof frameTimes[i] === 'number' ? frameTimes[i] : (i + 1) * 2;
+        const frameNumber = Math.max(0, Math.round(timeSec * VIDEO_FPS));
+        
+        // Skip if already analyzed
+        if (detectedFrames.has(frameNumber)) continue;
+        detectedFrames.add(frameNumber);
+        
+        // Detect objects using all models
+        const humans: Array<{coords: number[], conf: number}> = [];
+        const drills: Array<{coords: number[], conf: number}> = [];
+        const beams: Array<{coords: number[], conf: number}> = [];
+        const cylinders: Array<{coords: number[], conf: number}> = [];
+        const machines: Array<{coords: number[], conf: number}> = [];
+        const lh_machines: Array<{coords: number[], conf: number}> = [];
+        
+        // Run inference on each model
+        for (const [modelType, modelId] of Object.entries(roboflowModels)) {
+          try {
+            const response = await fetch(
+              `https://detect.roboflow.com/${modelId}?api_key=${roboflowApiKey}&confidence=0.5`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: base64
+              }
+            );
+            
+            if (response.ok) {
+              const result = await response.json();
+              
+              // Parse detections
+              for (const pred of result.predictions || []) {
+                const coords = [
+                  pred.x - pred.width / 2,  // x1
+                  pred.y - pred.height / 2, // y1
+                  pred.x + pred.width / 2,  // x2
+                  pred.y + pred.height / 2  // y2
+                ];
+                const conf = pred.confidence;
+                
+                // Categorize by model type
+                if (modelType === 'humans') humans.push({coords, conf});
+                else if (modelType === 'drills') drills.push({coords, conf});
+                else if (modelType === 'beams') beams.push({coords, conf});
+                else if (modelType === 'cylinders') cylinders.push({coords, conf});
+                else if (modelType === 'machines') machines.push({coords, conf});
+                else if (modelType === 'lh_machines') lh_machines.push({coords, conf});
+              }
+            }
+          } catch (e) {
+            console.error(`Error running ${modelType} model:`, e);
+          }
+          
+          // Small delay between models
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // Apply detection logic from Python detector
+        const frameViolations: Array<{type: string, conf: number}> = [];
+        
+        // 1. Human handling a drill
+        for (const h of humans) {
+          for (const d of drills) {
+            if (boxesCloseAndAligned(h.coords, d.coords, 120, 100)) {
+              const avgConf = (h.conf + d.conf) / 2;
+              if (avgConf >= 0.7) {
+                frameViolations.push({
+                  type: 'Human handling a drill',
+                  conf: avgConf
+                });
+              }
+            }
+          }
+        }
+        
+        // 2. Broken cylinder
+        for (const c of cylinders) {
+          if (c.conf >= 0.76) {
+            frameViolations.push({
+              type: 'Broken cylinder',
+              conf: c.conf
+            });
+          }
+        }
+        
+        // 3. Human using beam/rod on drill
+        for (const b of beams) {
+          // Check if beam is near any drill
+          let nearDrill = false;
+          let drillConf = 0;
+          for (const d of drills) {
+            if (boxesCloseAndAligned(b.coords, d.coords, 220, 180)) {
+              nearDrill = true;
+              drillConf = d.conf;
+              break;
+            }
+          }
+          
+          if (!nearDrill) continue;
+          
+          // Check if human is close to that beam
+          for (const h of humans) {
+            if (boxesCloseAndAligned(h.coords, b.coords, 220, 180)) {
+              const avgConf = (h.conf + b.conf + drillConf) / 3;
+              if (avgConf >= 0.7) {
+                frameViolations.push({
+                  type: 'Human using beam/rod on drill',
+                  conf: avgConf
+                });
+              }
+            }
+          }
+        }
+        
+        // 4. LH machines collision risk
+        for (let i = 0; i < lh_machines.length; i++) {
+          for (let j = i + 1; j < lh_machines.length; j++) {
+            const m1 = lh_machines[i];
+            const m2 = lh_machines[j];
+            if (boxesCloseAndAligned(m1.coords, m2.coords, 350, 250)) {
+              const avgConf = (m1.conf + m2.conf) / 2;
+              if (avgConf >= 0.7) {
+                frameViolations.push({
+                  type: 'LH machines collision risk',
+                  conf: avgConf
+                });
+              }
+            }
+          }
+        }
+        
+        // Save detected violations
+        for (const fv of frameViolations) {
+          const frameTimeSeconds = frameNumber / VIDEO_FPS;
+          const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
+          
+          const violation = {
+            violation_type: fv.type,
+            confidence: fv.conf.toFixed(3),
+            source_type: 'video',
+            source_name: videoName,
+            video_path: videoPath,
+            frame_number: frameNumber,
+            detected_at: violationTimestamp.toISOString(),
+            metadata: {
+              severity: 'critical',
+              detection_method: 'yolo_roboflow',
+              video_fps: VIDEO_FPS,
+              training_datasets: trainingDatasets?.length || 0
+            }
+          };
+          
+          violations.push(violation);
+          await supabase.from('violations').insert(violation);
+        }
+        
+        // Delay to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } else if (lovableApiKey && frameFiles.length > 0) {
       console.log('Using AI with sampled video frames');
       let contextPrompt = trainingContext || '';
       if (filenameViolationHint) {
@@ -275,7 +469,6 @@ serve(async (req) => {
           }
         }
 
-        // Small delay to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 400));
       }
     } else if (lovableApiKey) {
