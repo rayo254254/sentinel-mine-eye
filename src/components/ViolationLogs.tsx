@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Download, Filter, Play } from "lucide-react";
+import { Download, Filter, Play, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -94,6 +94,23 @@ const ViolationLogs = () => {
     a.click();
   };
 
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('violations')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      toast.success("Violation deleted successfully");
+      fetchViolations(); // Refresh the list
+    } catch (error) {
+      console.error('Error deleting violation:', error);
+      toast.error("Failed to delete violation");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -147,6 +164,7 @@ const ViolationLogs = () => {
                             <TableHead>Confidence</TableHead>
                             <TableHead>Frame</TableHead>
                             <TableHead>Severity</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -198,6 +216,16 @@ const ViolationLogs = () => {
                                 <Badge variant={log.metadata?.severity === "critical" ? "destructive" : "secondary"}>
                                   {log.metadata?.severity || 'unknown'}
                                 </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(log.id)}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </TableCell>
                             </TableRow>
                           ))}
