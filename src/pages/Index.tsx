@@ -1,7 +1,7 @@
-import Dashboard from "@/components/Dashboard";
+import ViolationLogs from "@/components/ViolationLogs";
 
 const Index = () => {
-  return <Dashboard />;
+  return <ViolationLogs />;
 };
 
 export default Index;

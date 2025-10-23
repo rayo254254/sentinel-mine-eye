@@ -83,8 +83,8 @@ const ViolationLogs = () => {
   };
 
   const handleExport = () => {
-    const csv = "timestamp,violation,zone,confidence,frame,severity\n" + 
-      logs.map(log => `${log.detected_at},${log.violation_type},${log.metadata?.zone || 'N/A'},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.frame_number},${log.metadata?.severity || 'N/A'}`).join("\n");
+    const csv = "timestamp,violation,confidence,frame,severity\n" + 
+      logs.map(log => `${log.detected_at},${log.violation_type},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.frame_number},${log.metadata?.severity || 'N/A'}`).join("\n");
     
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -144,11 +144,9 @@ const ViolationLogs = () => {
                           <TableRow>
                             <TableHead>Video Time</TableHead>
                             <TableHead>Violation Type</TableHead>
-                            <TableHead>Zone</TableHead>
                             <TableHead>Confidence</TableHead>
                             <TableHead>Frame</TableHead>
                             <TableHead>Severity</TableHead>
-                            <TableHead>Method</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -192,7 +190,6 @@ const ViolationLogs = () => {
                                   {log.violation_type}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{log.metadata?.zone || 'N/A'}</TableCell>
                               <TableCell className="text-primary font-medium">
                                 {(parseFloat(log.confidence) * 100).toFixed(1)}%
                               </TableCell>
@@ -200,19 +197,6 @@ const ViolationLogs = () => {
                               <TableCell>
                                 <Badge variant={log.metadata?.severity === "critical" ? "destructive" : "secondary"}>
                                   {log.metadata?.severity || 'unknown'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  {log.metadata?.detection_method === 'custom_ai' ? (
-                                    <span className="flex items-center gap-1">
-                                      🤖 AI
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center gap-1">
-                                      🎯 Roboflow
-                                    </span>
-                                  )}
                                 </Badge>
                               </TableCell>
                             </TableRow>

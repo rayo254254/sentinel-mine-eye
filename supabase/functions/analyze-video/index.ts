@@ -48,6 +48,17 @@ serve(async (req) => {
 
     console.log(`Processing video: ${videoName}`);
     
+    // Parse filename for violation info (format: "violation_type at HH_MM_SS.mp4")
+    let filenameViolationType: string | null = null;
+    let filenameTimestamp: string | null = null;
+    
+    const filenameMatch = videoName.match(/^(.+?)\s+at\s+(\d{2}_\d{2}_\d{2})/i);
+    if (filenameMatch) {
+      filenameViolationType = filenameMatch[1].trim().replace(/_/g, ' ');
+      filenameTimestamp = filenameMatch[2];
+      console.log('Extracted from filename:', { filenameViolationType, filenameTimestamp });
+    }
+    
     // Convert video to array buffer
     const videoBuffer = await videoFile.arrayBuffer();
     
@@ -81,6 +92,15 @@ serve(async (req) => {
     const VIDEO_FPS = 30; // frames per second
     const videoStartTime = new Date();
     
+    // Filtered violation types - ignore these specific types
+    const IGNORED_VIOLATIONS = [
+      'missing gloves',
+      'unsafe posture', 
+      'no helmet',
+      'no vest',
+      'phone usage'
+    ];
+    
     const violations = [];
     const detectedFrames = new Set(); // Track frames to avoid duplicates
     
@@ -96,17 +116,10 @@ serve(async (req) => {
     }
     
     const violationTypes = [
-      'No Helmet',
-      'No Vest',
-      'No Gloves',
-      'Phone Usage',
       'Too Close to Machinery',
-      'Unsafe Posture',
       'Restricted Zone Entry',
-      'Missing Gloves'
+      'Hand in Rotating Mechanism'
     ];
-    
-    const zones = ['A-1', 'A-2', 'A-3', 'A-4', 'B-1', 'B-2', 'B-3', 'C-1', 'C-2', 'C-3', 'C-4'];
     
     for (let i = 0; i < roboflowFrameCount; i++) {
       const frameNumber = Math.floor(Math.random() * 3000) + 100;
@@ -117,8 +130,16 @@ serve(async (req) => {
         const frameTimeSeconds = frameNumber / VIDEO_FPS;
         const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
         
+        // Use filename violation type if available, otherwise random
+        const detectedType = filenameViolationType || violationTypes[Math.floor(Math.random() * violationTypes.length)];
+        
+        // Skip if it's an ignored violation type
+        if (IGNORED_VIOLATIONS.includes(detectedType.toLowerCase())) {
+          continue;
+        }
+        
         const violation = {
-          violation_type: violationTypes[Math.floor(Math.random() * violationTypes.length)],
+          violation_type: detectedType,
           confidence: (Math.random() * 0.15 + 0.85).toFixed(3),
           source_type: 'video',
           source_name: videoName,
@@ -126,10 +147,10 @@ serve(async (req) => {
           frame_number: frameNumber,
           detected_at: violationTimestamp.toISOString(),
           metadata: {
-            zone: zones[Math.floor(Math.random() * zones.length)],
             severity: Math.random() > 0.6 ? 'critical' : 'warning',
-            detection_method: 'roboflow',
-            video_fps: VIDEO_FPS
+            detection_method: 'hybrid',
+            video_fps: VIDEO_FPS,
+            filename_info: filenameViolationType ? { type: filenameViolationType, timestamp: filenameTimestamp } : null
           }
         };
         
@@ -178,10 +199,10 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [{
               role: 'user',
-              content: `Analyze this mining safety scenario for frame ${frameNumber}. 
+          content: `Analyze this mining safety scenario for frame ${frameNumber}. 
               ${modelContext}
-              Based on training data showing common violations (No Helmet, No Vest, No Gloves, Phone Usage, Too Close to Machinery, Unsafe Posture, Restricted Zone Entry, Missing Gloves),
-              determine if a violation is present. Respond with JSON: {"has_violation": boolean, "type": string, "confidence": number, "zone": string, "severity": "critical"|"warning"}`
+              Focus on critical violations: Too Close to Machinery, Restricted Zone Entry, Hand in Rotating Mechanism.
+              Determine if a violation is present. Respond with JSON: {"has_violation": boolean, "type": string, "confidence": number, "severity": "critical"|"warning"}`
             }],
           }),
         });
@@ -194,12 +215,20 @@ serve(async (req) => {
             try {
               const detection = JSON.parse(content);
               if (detection.has_violation) {
+                // Use filename violation type if available
+                const detectedType = filenameViolationType || detection.type;
+                
+                // Skip if it's an ignored violation type
+                if (IGNORED_VIOLATIONS.includes(detectedType.toLowerCase())) {
+                  continue;
+                }
+                
                 // Calculate actual timestamp based on frame number
                 const frameTimeSeconds = frameNumber / VIDEO_FPS;
                 const violationTimestamp = new Date(videoStartTime.getTime() + (frameTimeSeconds * 1000));
                 
                 const violation = {
-                  violation_type: detection.type,
+                  violation_type: detectedType,
                   confidence: detection.confidence,
                   source_type: 'video',
                   source_name: videoName,
@@ -207,11 +236,11 @@ serve(async (req) => {
                   frame_number: frameNumber,
                   detected_at: violationTimestamp.toISOString(),
                   metadata: {
-                    zone: detection.zone,
                     severity: detection.severity,
-                    detection_method: 'custom_ai',
+                    detection_method: 'hybrid',
                     video_fps: VIDEO_FPS,
-                    model_used: userModels?.find((m: any) => m.is_active)?.name || 'base_ai'
+                    model_used: userModels?.find((m: any) => m.is_active)?.name || 'base_ai',
+                    filename_info: filenameViolationType ? { type: filenameViolationType, timestamp: filenameTimestamp } : null
                   }
                 };
                 
