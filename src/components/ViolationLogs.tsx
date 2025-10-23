@@ -162,7 +162,6 @@ const ViolationLogs = () => {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Video Name</TableHead>
                             <TableHead>Video Time</TableHead>
                             <TableHead>Violation Type</TableHead>
                             <TableHead>Confidence</TableHead>
@@ -176,9 +175,6 @@ const ViolationLogs = () => {
                             
                             return (
                             <TableRow key={log.id}>
-                              <TableCell className="font-medium text-sm max-w-xs truncate" title={log.source_name}>
-                                {log.source_name}
-                              </TableCell>
                               <TableCell className="font-mono text-sm">
                                 {log.video_path ? (
                                   <button
