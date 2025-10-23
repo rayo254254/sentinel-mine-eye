@@ -29,9 +29,9 @@ serve(async (req) => {
       throw new Error('Invalid file upload');
     }
 
-    // Validate file size (100MB limit)
-    if (videoFile.size > 100 * 1024 * 1024) {
-      throw new Error('File size exceeds 100MB limit');
+    // Validate file size (250MB limit)
+    if (videoFile.size > 250 * 1024 * 1024) {
+      throw new Error('File size exceeds 250MB limit');
     }
 
     // Validate MIME type

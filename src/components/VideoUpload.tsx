@@ -73,8 +73,8 @@ const VideoUpload = () => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 100 * 1024 * 1024) {
-        toast.error("File size must be less than 100MB");
+      if (file.size > 250 * 1024 * 1024) {
+        toast.error("File size must be less than 250MB");
         return;
       }
       setSelectedFile(file);
@@ -163,7 +163,7 @@ const VideoUpload = () => {
         <CardHeader>
           <CardTitle>Upload Video</CardTitle>
           <CardDescription>
-            Supported formats: MP4, AVI, MOV (max 100MB)
+            Supported formats: MP4, AVI, MOV (max 250MB)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
