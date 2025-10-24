@@ -86,14 +86,19 @@ const ViolationLogs = () => {
   };
 
   const handleExport = () => {
-    const csv = "video_name,timestamp,violation,confidence,severity\n" + 
-      logs.map(log => `"${log.source_name}",${log.detected_at},${log.violation_type},${(parseFloat(log.confidence) * 100).toFixed(1)}%,${log.metadata?.severity || 'N/A'}`).join("\n");
+    const csv = "Video Name,Timestamp,Video Frame Number,Type of Violation,Detection Accuracy (%)\n" + 
+      logs.map(log => {
+        const fps = log.metadata?.fps || 30;
+        const timestamp = formatVideoTimestamp(log.frame_number, fps);
+        const accuracy = (parseFloat(log.confidence) * 100).toFixed(1);
+        return `"${log.source_name}",${timestamp},${log.frame_number},${log.violation_type},${accuracy}%`;
+      }).join("\n");
     
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'violation_logs.csv';
+    a.download = 'violation_report.csv';
     a.click();
   };
 
