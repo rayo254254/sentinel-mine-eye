@@ -9,7 +9,6 @@ import { Auth } from "@/components/Auth";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Sidebar from "./components/Sidebar";
-import Index from "./pages/Index";
 import Upload from "./pages/Upload";
 import Logs from "./pages/Logs";
 import Models from "./pages/Models";
